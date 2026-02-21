@@ -6,6 +6,7 @@
 
 ## 目次
 
+### バックエンド (FastAPI)
 1. [アプリ全体の起動フロー](#1-アプリ全体の起動フロー)
 2. [ポーリングサイクルの詳細](#2-ポーリングサイクルの詳細)
 3. [MLB Stats API の構造](#3-mlb-stats-api-の構造)
@@ -18,6 +19,15 @@
 10. [非同期処理の設計方針](#10-非同期処理の設計方針)
 11. [選手マスタの設計](#11-選手マスタの設計)
 12. [拡張時の注意点・落とし穴](#12-拡張時の注意点落とし穴)
+
+### フロントエンド (Expo React Native)
+13. [フロントエンド全体の起動フロー](#13-フロントエンド全体の起動フロー)
+14. [画面遷移ロジック](#14-画面遷移ロジック)
+15. [Push Token 取得・登録フロー](#15-push-token-取得登録フロー)
+16. [APIクライアントの設計](#16-apiクライアントの設計)
+17. [状態管理・カスタムフック](#17-状態管理カスタムフック)
+18. [フロントエンド モジュール依存関係](#18-フロントエンド-モジュール依存関係)
+19. [フロントエンド 拡張時の注意点・落とし穴](#19-フロントエンド-拡張時の注意点落とし穴)
 
 ---
 
@@ -493,3 +503,295 @@ et = pytz.timezone("America/New_York")
 today = datetime.now(et).strftime("%Y-%m-%d")
 ```
 (`pytz` はすでに依存に含まれている)
+
+---
+
+---
+
+# フロントエンド (Expo React Native)
+
+---
+
+## 13. フロントエンド全体の起動フロー
+
+```
+npx expo start
+    │
+    └─ expo-router/entry
+         │
+         └─ app/_layout.tsx  (RootLayout)
+              │
+              ├─ setupNotificationHandlers()  ← フォアグラウンド通知ハンドラー登録
+              │
+              └─ getPushToken()               ← SecureStore を確認
+                   │
+                   ├─ トークンあり  → router.replace("/(tabs)")
+                   └─ トークンなし  → router.replace("/onboarding")
+```
+
+### 重要ポイント
+- `_layout.tsx` は2つの `useEffect` を持つ。1つは通知ハンドラーの登録（マウント時1回）、もう1つはトークン確認によるリダイレクト。
+- Expo Router v6 の `Stack` がルートナビゲーターとして機能し、`onboarding` と `(tabs)` の2つのスタックを管理する。
+- `app/index.tsx` は保険的なリダイレクト用で、`_layout.tsx` の判定より後に到達した場合のフォールバック。
+
+---
+
+## 14. 画面遷移ロジック
+
+```
+起動
+  └─ _layout.tsx
+       ├─ SecureStore にトークンあり ─────────────────→ (tabs)
+       │                                                    ├─ index.tsx  (ホーム)
+       │                                                    └─ settings.tsx (設定)
+       └─ SecureStore にトークンなし → onboarding.tsx
+                                            │
+                                     通知許可 + 登録成功
+                                            │
+                                            └─ router.replace("/(tabs)")
+```
+
+### 各画面の責務
+
+| 画面 | パス | 責務 |
+|------|------|------|
+| ルートレイアウト | `app/_layout.tsx` | 初期ルーティング判定・通知ハンドラー設定 |
+| オンボーディング | `app/onboarding.tsx` | 通知許可取得・push_token 登録・SecureStore 保存 |
+| ホーム | `app/(tabs)/index.tsx` | フォロー選手と通知設定のサマリー表示 |
+| 設定 | `app/(tabs)/settings.tsx` | 選手・イベント種別ごとのトグル（即時API反映） |
+
+### タブナビゲーター (`(tabs)/_layout.tsx`)
+- Expo Router の `Tabs` コンポーネントを使用。
+- ホームタブ（⚾）と設定タブ（⚙️）の2タブ構成。
+- `tabBarStyle.backgroundColor` に `Colors.tabBar` を適用し、ダーク配色に統一。
+
+---
+
+## 15. Push Token 取得・登録フロー
+
+```
+onboarding.tsx
+  │
+  └─ handleAllow()
+       │
+       ├─ requestAndGetToken()          ← lib/notifications.ts
+       │   ├─ Android: setNotificationChannelAsync("default")
+       │   ├─ getPermissionsAsync()
+       │   ├─ 未許可なら requestPermissionsAsync()
+       │   ├─ 許可されなかった → Error をthrow
+       │   └─ getExpoPushTokenAsync({ projectId? })
+       │        └─ "ExponentPushToken[xxx]" を返す
+       │
+       ├─ registerUser(token)           ← lib/api.ts → POST /api/v1/users/register
+       │   └─ バックエンドで users + user_players + user_event_prefs を初期作成
+       │
+       ├─ savePushToken(token)          ← lib/storage.ts → SecureStore.setItemAsync
+       │
+       └─ router.replace("/(tabs)")
+```
+
+### `getExpoPushTokenAsync` の `projectId` について
+- Expo Go で開発中は `Constants.expoConfig.extra.eas.projectId` が未設定のため `undefined` を渡す（Expo Go が自動処理）。
+- EAS Build でビルドした本番バイナリでは `projectId` が必要になるため、`eas.json` と `app.json` の `extra.eas.projectId` の設定が必要。
+
+### 通知ハンドラーの設定 (`notifications.ts`)
+```typescript
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
+```
+これはモジュールトップレベルで実行されるため、`import` 時に自動的に設定される。
+
+---
+
+## 16. APIクライアントの設計
+
+### ベースURL
+```typescript
+const API_BASE =
+  process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:8001";
+```
+- `EXPO_PUBLIC_` プレフィックスにより、Expo のビルド時にバンドルへインライン展開される。
+- **本番では必ず `https://` を使うこと**。`__DEV__ === false` の場合に `http://` だと `console.error` で警告が出るよう実装済み。
+
+### push_token のURLエンコード
+```typescript
+function encodedToken(token: string): string {
+  return encodeURIComponent(token);
+}
+// "ExponentPushToken[xxx]" → "ExponentPushToken%5Bxxx%5D"
+```
+`[` `]` はURLとして不正な文字のためエンコード必須。`encodeURIComponent` でエスケープしている。
+
+### エラーハンドリング方針
+```typescript
+// ネットワーク障害 (fetch自体が失敗)
+throw new Error("サーバーに接続できませんでした。ネットワーク接続を確認してください。");
+
+// HTTPエラー (4xx / 5xx)
+throw new Error(`通信エラーが発生しました (${res.status})`);
+// DEV環境のみ console.error でバックエンドの生レスポンスを出力
+```
+バックエンドの内部情報（スタックトレース等）がユーザーに見えないよう、エラーメッセージはサニタイズ済み。
+
+### API 関数一覧
+
+| 関数 | HTTP | パス |
+|------|------|------|
+| `registerUser(token)` | POST | `/api/v1/users/register` |
+| `getPlayers()` | GET | `/api/v1/players` |
+| `getPreferences(token)` | GET | `/api/v1/preferences/{token}` |
+| `updatePlayers(token, ids)` | PUT | `/api/v1/preferences/{token}/players` |
+| `updateEvents(token, prefs)` | PUT | `/api/v1/preferences/{token}/events` |
+
+---
+
+## 17. 状態管理・カスタムフック
+
+### `usePushToken` (`hooks/usePushToken.ts`)
+
+```typescript
+// 返り値
+{ token: string | null, isLoading: boolean, setToken: Dispatch }
+```
+
+- マウント時に `SecureStore.getItemAsync` で push_token を1回読み込む。
+- `isLoading: true` の間はリダイレクト判定を保留できる。
+- `setToken` を onboarding から呼ぶことで、登録後にトークンをstateへ反映させる（ただし現在はリダイレクトで画面を切り替えるため直接使用は少ない）。
+
+### `usePreferences` (`hooks/usePreferences.ts`)
+
+```typescript
+// 返り値
+{
+  players: Player[],
+  preferences: UserPreferences | null,
+  isLoading: boolean,
+  error: string | null,
+  togglePlayer: (playerId: number) => Promise<void>,
+  toggleEvent: (key: "home_run" | "strikeout", value: boolean) => Promise<void>,
+  refresh: () => Promise<void>,
+}
+```
+
+**初回ロード:**
+```
+useEffect → load()
+  └─ Promise.all([getPlayers(), getPreferences(token)])
+       ├─ setPlayers(p)
+       └─ setPreferences(prefs)
+```
+
+**選手トグル (`togglePlayer`):**
+```
+現在の player_ids からtoggle（含む→除く、含まない→追加）
+  └─ updatePlayers(token, next)  → setPreferences(updated)
+```
+
+**イベントトグル (`toggleEvent`):**
+```
+event_prefs の該当キーをtoggle
+  └─ updateEvents(token, next)  → setPreferences(updated)
+```
+
+**注意点:** `togglePlayer` / `toggleEvent` は連続呼び出し時にレースコンディションが発生しうる（楽観的更新なし + API レスポンスで state を上書き）。MVP段階では許容。将来は楽観的更新か debounce + キャンセルを導入する。
+
+### データフロー図
+
+```
+SecureStore
+    │ getPushToken()
+    ▼
+usePushToken
+    │ token
+    ▼
+usePreferences(token)
+    ├─ GET /api/v1/players        → players[]
+    └─ GET /api/v1/preferences/.. → preferences
+              │
+              ├─ ホーム画面: 表示のみ (subscribedPlayers, event_prefs サマリー)
+              └─ 設定画面:  togglePlayer / toggleEvent
+                                │
+                                ├─ PUT /players → setPreferences(updated)
+                                └─ PUT /events  → setPreferences(updated)
+```
+
+---
+
+## 18. フロントエンド モジュール依存関係
+
+```
+app/_layout.tsx
+  ├── lib/storage.ts      (getPushToken)
+  └── lib/notifications.ts (setupNotificationHandlers)
+
+app/onboarding.tsx
+  ├── lib/notifications.ts (requestAndGetToken)
+  ├── lib/api.ts           (registerUser)
+  └── lib/storage.ts       (savePushToken)
+
+app/(tabs)/index.tsx
+app/(tabs)/settings.tsx
+  ├── hooks/usePushToken.ts
+  │     └── lib/storage.ts
+  ├── hooks/usePreferences.ts
+  │     └── lib/api.ts
+  ├── components/PlayerCard.tsx
+  │     ├── types/api.ts
+  │     └── constants/colors.ts
+  └── components/EventToggle.tsx
+        └── constants/colors.ts
+
+lib/api.ts
+  └── types/api.ts
+
+lib/notifications.ts
+  └── expo-notifications, expo-constants
+
+lib/storage.ts
+  └── expo-secure-store
+```
+
+**循環依存なし**。`types/api.ts` と `constants/colors.ts` は全モジュールから参照される末端モジュール。
+
+---
+
+## 19. フロントエンド 拡張時の注意点・落とし穴
+
+### 新しいイベント種別を追加する場合
+1. バックエンドの `EVENT_MAP` に追加（RESEARCH.md §4 参照）
+2. `types/api.ts` の `EventPreferences` インターフェースにキーを追加
+3. `hooks/usePreferences.ts` の `toggleEvent` の型引数 `key: keyof EventPreferences` は自動対応
+4. `app/(tabs)/settings.tsx` に `EventToggle` コンポーネントを追加
+5. `app/(tabs)/index.tsx` の `SummaryBadge` にも追加
+
+### EAS Build で本番リリースする場合
+- `eas.json` を作成し、`eas build` でネイティブビルドを生成する
+- `app.json` の `extra.eas.projectId` に Expo Dashboard のプロジェクトIDを設定
+- `EXPO_PUBLIC_API_BASE_URL` を本番URLに変更（`https://` 必須）
+- iOS: `bundleIdentifier`、Android: `package` が `app.json` に設定済み
+
+### Expo Go での動作制限
+- `expo-notifications` の push 通知受信は **Expo Go では動作しない** (Expo Go のシミュレーターでは push token は取得できるが実際の通知は届かない)
+- 実機での push 通知テストには **EAS Build** で開発ビルドを作成する必要がある
+- 開発中は `requestAndGetToken()` が `ExponentPushToken[...]` を返すが、Expo のサーバーを経由するため Expo アカウントと紐付けが必要
+
+### `expo-secure-store` の制限
+- Web (`expo start --web`) ではSecureStoreが動作しないため、Web対応が必要な場合は `localStorage` へのフォールバックを実装する
+- 値の最大サイズは 2048 バイト。push_tokenは通常100バイト以下のため問題なし
+
+### push_token がURLパスに含まれるリスク
+- バックエンドのアクセスログに push_token が平文で記録される
+- push_token を知る第三者が設定の読み書きができてしまう（認証なし設計の制約）
+- 将来的にはリクエストヘッダー（`X-Push-Token` 等）へ移行することで露出範囲を限定できる
+
+### `__DEV__` グローバル変数
+- Expo では開発中 (`expo start`) は `__DEV__ === true`、本番ビルドでは `false`
+- `lib/api.ts` でエラーレスポンスの詳細を `__DEV__` フラグで出し分けている
+- TypeScript の型定義は `expo/tsconfig.base` に含まれるため追加設定不要
