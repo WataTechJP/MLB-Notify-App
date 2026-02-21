@@ -777,10 +777,20 @@ lib/storage.ts
 - `EXPO_PUBLIC_API_BASE_URL` を本番URLに変更（`https://` 必須）
 - iOS: `bundleIdentifier`、Android: `package` が `app.json` に設定済み
 
-### Expo Go での動作制限
-- `expo-notifications` の push 通知受信は **Expo Go では動作しない** (Expo Go のシミュレーターでは push token は取得できるが実際の通知は届かない)
-- 実機での push 通知テストには **EAS Build** で開発ビルドを作成する必要がある
-- 開発中は `requestAndGetToken()` が `ExponentPushToken[...]` を返すが、Expo のサーバーを経由するため Expo アカウントと紐付けが必要
+### Expo Go での動作制限 (SDK 53以降)
+**Expo SDK 53 以降、`expo-notifications` のリモートプッシュ通知機能は Expo Go から完全に削除された。**
+- UI の確認（画面遷移・トグル動作）は Expo Go でも可能
+- push token の取得 (`requestAndGetToken()`) は Expo Go でも実行できるが、実際の通知は届かない
+- push 通知の E2E テストには **EAS Build による開発ビルド** が必須
+
+```bash
+npm install -g eas-cli
+eas login
+eas build --profile development --platform ios      # iOS 開発ビルド
+eas build --profile development --platform android  # Android 開発ビルド
+```
+
+- 開発ビルドをインストールした実機で `npx expo start` に接続すれば、ホットリロードを維持しつつ push 通知もテストできる
 
 ### `expo-secure-store` の制限
 - Web (`expo start --web`) ではSecureStoreが動作しないため、Web対応が必要な場合は `localStorage` へのフォールバックを実装する

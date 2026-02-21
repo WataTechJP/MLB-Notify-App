@@ -37,7 +37,7 @@ Expo React Native アプリ (iOS / Android)
 | HTTP クライアント | httpx 0.27 |
 | プッシュ通知 | Expo Push API |
 
-### フロントエンド
+### フロントエンド (Expo React Native)
 
 | 項目 | 内容 |
 |------|------|
@@ -118,7 +118,10 @@ MLB APP/
 - [uv](https://docs.astral.sh/uv/) インストール済み
 - Docker / Docker Compose
 - Node.js 18+ / npm
-- Expo Go アプリ (iOS / Android、開発時)
+- iOS / Android 実機 (push通知のテストに必要)
+
+> **注意:** Expo SDK 53 以降、`expo-notifications` のリモートプッシュ通知は **Expo Go では動作しません**。
+> UI の確認は Expo Go で可能ですが、push 通知のテストには EAS Build による開発ビルドが必要です。
 
 ### バックエンド起動
 
@@ -154,7 +157,20 @@ cp .env.example .env
 npx expo start
 ```
 
-起動後、ターミナルに表示される QR コードを Expo Go アプリで読み込むか、`i` / `a` キーでシミュレーターを起動する。
+> **push通知をテストするには開発ビルドが必要です。**
+> Expo SDK 53 以降、`expo-notifications` のリモートプッシュ通知は Expo Go から削除されました。
+>
+> ```bash
+> # EAS CLI のインストール (初回のみ)
+> npm install -g eas-cli
+> eas login
+>
+> # 開発ビルドを実機にインストール
+> eas build --profile development --platform ios   # iOS
+> eas build --profile development --platform android  # Android
+> ```
+>
+> UI の確認のみであれば Expo Go (`i` / `a` キー) で動作します。
 
 ---
 
@@ -164,7 +180,7 @@ npx expo start
 
 | 変数名 | デフォルト | 説明 |
 |--------|-----------|------|
-| `REDIS_URL` | `redis://localhost:6379/0` | Redis接続URL |
+| `REDIS_URL` | `redis://localhost:6379/0` | Redis 接続URL |
 | `DATABASE_URL` | `sqlite+aiosqlite:///./data/mlb_app.db` | SQLite DB パス |
 | `POLL_INTERVAL_SECONDS` | `20` | MLB APIポーリング間隔(秒) |
 | `MLB_API_BASE_URL` | `https://statsapi.mlb.com/api` | MLB Stats API ベースURL |
@@ -174,7 +190,7 @@ npx expo start
 
 | 変数名 | デフォルト | 説明 |
 |--------|-----------|------|
-| `EXPO_PUBLIC_API_BASE_URL` | `http://localhost:8001` | バックエンドAPIのベースURL |
+| `EXPO_PUBLIC_API_BASE_URL` | `http://localhost:8001` | バックエンド API のベースURL |
 
 > **注意:** `EXPO_PUBLIC_` プレフィックスの変数はビルド時にバンドルへ埋め込まれ、クライアントに公開される。機密情報は絶対に設定しないこと。本番環境では必ず `https://` を使用すること。
 
@@ -183,7 +199,7 @@ npx expo start
 ## API エンドポイント
 
 | Method | Path | 説明 |
-|--------|------|------|
+|--------|------|---------|
 | `GET` | `/api/v1/health` | ヘルスチェック |
 | `GET` | `/api/v1/players` | 日本人選手一覧 |
 | `POST` | `/api/v1/users/register` | Expo Push Token 登録/更新 |
@@ -215,7 +231,7 @@ curl -X PUT http://localhost:8001/api/v1/preferences/ExponentPushToken[xxxxxx]/e
 ## 対象選手（初期）
 
 | 選手名 | player_id | ポジション | チーム |
-|--------|-----------|-----------|-------|
+|--------|-----------|------------|--------|
 | 大谷翔平 | 660271 | 投手/野手 | LAD |
 | 吉田正尚 | 807799 | 野手 | BOS |
 | 鈴木誠也 | 673548 | 野手 | CHC |
@@ -228,7 +244,7 @@ curl -X PUT http://localhost:8001/api/v1/preferences/ExponentPushToken[xxxxxx]/e
 
 ## イベント検知ロジック
 
-```
+```text
 20秒ごと
   → 今日の試合一覧取得 (MLB Stats API)
   → 各試合のライブフィードを並列取得
@@ -241,6 +257,7 @@ curl -X PUT http://localhost:8001/api/v1/preferences/ExponentPushToken[xxxxxx]/e
 ```
 
 ### Redis スキーマ
+
 - Key: `last_event:{player_id}:{game_pk}`
 - Value: `atBatIndex` (int)
 - TTL: 86400秒 (24h)
@@ -279,7 +296,7 @@ user_event_prefs (
 ## 画面構成 (フロントエンド)
 
 | 画面 | 表示条件 | 内容 |
-|------|----------|------|
+| --- | --- | --- |
 | オンボーディング | 初回起動 (push_token 未保存) | 通知許可取得・バックエンド登録 |
 | ホーム | push_token 保存済み | フォロー中選手一覧・通知設定サマリー |
 | 設定 | push_token 保存済み | 選手ごとのON/OFF・ホームラン/奪三振のON/OFF |
@@ -302,7 +319,7 @@ await detect_events(redis, db, http_client, game_type="S")
 
 ## 今後の対応候補
 
-### バックエンド
+### バックエンド TODO
 
 - [ ] レートリミット追加 (`slowapi`)
 - [ ] push_token をURLパスからヘッダーへ移動
@@ -312,7 +329,7 @@ await detect_events(redis, db, http_client, game_type="S")
 - [ ] 本番デプロイ (Oracle Cloud / AWS EC2 + Docker)
 - [ ] WebSocket化 (有料APIリアルタイムストリーム対応時)
 
-### フロントエンド
+### フロントエンド TODO
 
 - [ ] EAS Build での実機ビルド・push通知の E2E テスト
 - [ ] 通知タップ時の詳細画面遷移 (deep link + `data` フィールド活用)
