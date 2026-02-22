@@ -1,6 +1,6 @@
 import re
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 _EXPO_TOKEN_RE = re.compile(r"^ExponentPushToken\[.+\]$")
 
@@ -33,10 +33,23 @@ class EventPrefsUpdate(BaseModel):
     strikeout: bool = True
 
 
+class PlayerEventPrefsUpdate(BaseModel):
+    player_id: int
+    home_run: bool | None = None
+    strikeout: bool | None = None
+
+    @model_validator(mode="after")
+    def at_least_one_event(self) -> "PlayerEventPrefsUpdate":
+        if self.home_run is None and self.strikeout is None:
+            raise ValueError("home_run または strikeout のいずれかを指定してください")
+        return self
+
+
 class PreferencesResponse(BaseModel):
     expo_push_token: str
     is_active: bool
     player_ids: list[int]
-    event_prefs: dict[str, bool]
+    event_prefs: dict[str, bool]  # 後方互換として残す（空 {} を返す）
+    player_event_prefs: dict[str, dict[str, bool]]  # {"660271": {"home_run": true, ...}}
 
     model_config = {"from_attributes": True}

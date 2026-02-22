@@ -19,6 +19,7 @@ class User(Base):
 
     players: Mapped[list["UserPlayer"]] = relationship("UserPlayer", back_populates="user", cascade="all, delete-orphan")
     event_prefs: Mapped[list["UserEventPref"]] = relationship("UserEventPref", back_populates="user", cascade="all, delete-orphan")
+    player_event_prefs: Mapped[list["UserPlayerEventPref"]] = relationship("UserPlayerEventPref", back_populates="user", cascade="all, delete-orphan")
 
 
 class UserPlayer(Base):
@@ -42,3 +43,16 @@ class UserEventPref(Base):
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     user: Mapped["User"] = relationship("User", back_populates="event_prefs")
+
+
+class UserPlayerEventPref(Base):
+    __tablename__ = "user_player_event_prefs"
+    __table_args__ = (UniqueConstraint("user_id", "player_id", "event_type"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    player_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False)  # "home_run" | "strikeout"
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    user: Mapped["User"] = relationship("User", back_populates="player_event_prefs")

@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.japanese_players import BATTER_IDS, PITCHER_IDS, PLAYER_MAP
-from app.models.user import User, UserEventPref, UserPlayer
+from app.models.user import User, UserEventPref, UserPlayer, UserPlayerEventPref
 from app.services.mlb_api import extract_plays, get_live_feed, get_todays_games, is_live_game
 from app.services.notification import send_notifications
 
@@ -49,12 +49,14 @@ async def _get_target_users(
         select(User.expo_push_token)
         .join(UserPlayer, UserPlayer.user_id == User.id)
         .join(
-            UserEventPref,
-            (UserEventPref.user_id == User.id) & (UserEventPref.event_type == event_type),
+            UserPlayerEventPref,
+            (UserPlayerEventPref.user_id == User.id)
+            & (UserPlayerEventPref.player_id == UserPlayer.player_id)
+            & (UserPlayerEventPref.event_type == event_type),
         )
         .where(
             UserPlayer.player_id == player_id,
-            UserEventPref.is_enabled == True,  # noqa: E712
+            UserPlayerEventPref.is_enabled == True,  # noqa: E712
             User.is_active == True,  # noqa: E712
         )
     )
