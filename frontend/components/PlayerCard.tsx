@@ -6,7 +6,7 @@ import {
   StyleSheet,
   TouchableOpacity,
 } from "react-native";
-import type { Player } from "@/types/api";
+import type { Player, PlayerEventPrefs } from "@/types/api";
 import { Colors } from "@/constants/colors";
 
 const POSITION_LABEL: Record<Player["position"], string> = {
@@ -18,6 +18,7 @@ const POSITION_LABEL: Record<Player["position"], string> = {
 interface PlayerCardProps {
   player: Player;
   isSubscribed: boolean;
+  eventPrefs?: PlayerEventPrefs;
   onToggle?: () => void;
   showToggle?: boolean;
   onSettingsPress?: () => void;
@@ -26,10 +27,15 @@ interface PlayerCardProps {
 export function PlayerCard({
   player,
   isSubscribed,
+  eventPrefs,
   onToggle,
   showToggle = true,
   onSettingsPress,
 }: PlayerCardProps) {
+  const enabledLabels = [
+    eventPrefs?.home_run && "HR",
+    eventPrefs?.strikeout && "奪三振",
+  ].filter((v): v is string => typeof v === "string");
   return (
     <TouchableOpacity
       style={[styles.card, isSubscribed && styles.cardActive]}
@@ -45,6 +51,19 @@ export function PlayerCard({
         <Text style={styles.meta}>
           {player.team} · {POSITION_LABEL[player.position]}
         </Text>
+        {isSubscribed && (
+          <View style={styles.eventRow}>
+            {enabledLabels.length > 0 ? (
+              enabledLabels.map((label) => (
+                <View key={label} style={styles.eventChip}>
+                  <Text style={styles.eventChipText}>{label}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.noEventText}>通知なし</Text>
+            )}
+          </View>
+        )}
       </View>
       {showToggle && (
         <Switch
@@ -111,5 +130,29 @@ const styles = StyleSheet.create({
   },
   settingsIcon: {
     fontSize: 20,
+  },
+  eventRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 6,
+  },
+  eventChip: {
+    backgroundColor: Colors.accent + "33",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: Colors.accent,
+  },
+  eventChipText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: Colors.accent,
+  },
+  noEventText: {
+    fontSize: 11,
+    color: Colors.subtext,
+    fontStyle: "italic",
   },
 });

@@ -1,3 +1,4 @@
+import { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -5,16 +6,39 @@ import {
   StyleSheet,
   ActivityIndicator,
   RefreshControl,
+  TouchableOpacity,
 } from "react-native";
 import { usePushToken } from "@/hooks/usePushToken";
 import { usePreferences } from "@/hooks/usePreferences";
 import { PlayerCard } from "@/components/PlayerCard";
 import { Colors } from "@/constants/colors";
+import { sendTestNotification } from "@/lib/api";
 
 export default function SettingsScreen() {
   const { token } = usePushToken();
   const { players, preferences, isLoading, error, togglePlayer, refresh } =
     usePreferences(token);
+  const [isTesting, setIsTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  const handleRefresh = useCallback(async () => {
+    setTestResult(null);
+    await refresh();
+  }, [refresh]);
+
+  const handleSendTest = async () => {
+    if (!token) return;
+    setIsTesting(true);
+    setTestResult(null);
+    try {
+      await sendTestNotification(token);
+      setTestResult({ ok: true, msg: "送信しました！数秒後に通知が届きます" });
+    } catch (e) {
+      setTestResult({ ok: false, msg: e instanceof Error ? e.message : "送信に失敗しました" });
+    } finally {
+      setIsTesting(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -31,7 +55,7 @@ export default function SettingsScreen() {
       refreshControl={
         <RefreshControl
           refreshing={isLoading}
-          onRefresh={refresh}
+          onRefresh={handleRefresh}
           tintColor={Colors.accent}
         />
       }
@@ -54,10 +78,33 @@ export default function SettingsScreen() {
             key={player.id}
             player={player}
             isSubscribed={preferences?.player_ids.includes(player.id) ?? false}
+            eventPrefs={preferences?.player_event_prefs[String(player.id)]}
             onToggle={() => togglePlayer(player.id)}
             showToggle={true}
           />
         ))}
+      </View>
+
+      {/* 通知テスト */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>通知テスト</Text>
+        <TouchableOpacity
+          style={[styles.testButton, isTesting && styles.testButtonDisabled]}
+          onPress={handleSendTest}
+          disabled={isTesting || !token}
+          activeOpacity={0.7}
+        >
+          {isTesting ? (
+            <ActivityIndicator size="small" color={Colors.text} />
+          ) : (
+            <Text style={styles.testButtonText}>テスト通知を送る</Text>
+          )}
+        </TouchableOpacity>
+        {testResult && (
+          <Text style={[styles.testResultText, testResult.ok ? styles.testResultOk : styles.testResultError]}>
+            {testResult.msg}
+          </Text>
+        )}
       </View>
     </ScrollView>
   );
@@ -106,5 +153,32 @@ const styles = StyleSheet.create({
   errorText: {
     color: Colors.accent,
     fontSize: 13,
+  },
+  testButton: {
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  testButtonDisabled: {
+    opacity: 0.5,
+  },
+  testButtonText: {
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  testResultText: {
+    marginTop: 10,
+    fontSize: 13,
+    textAlign: "center",
+  },
+  testResultOk: {
+    color: Colors.success,
+  },
+  testResultError: {
+    color: Colors.accent,
   },
 });

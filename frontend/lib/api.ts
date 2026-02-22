@@ -91,3 +91,10 @@ export async function updatePlayerEvents(
     }
   );
 }
+
+export async function sendTestNotification(token: string): Promise<void> {
+  return request<void>("/api/v1/test/send-notification", {
+    method: "POST",
+    body: JSON.stringify({ push_token: token }),
+  });
+}

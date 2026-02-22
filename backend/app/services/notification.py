@@ -44,3 +44,4 @@ async def send_notifications(
             logger.info("Push sent to %d tokens: %s", len(chunk), result.get("data", []))
         except httpx.HTTPError as e:
             logger.error("Failed to send push notifications: %s", e)
+            raise
