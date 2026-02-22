@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import type { Player, UserPreferences, EventPreferences } from "@/types/api";
-import { getPlayers, getPreferences, updatePlayers, updateEvents } from "@/lib/api";
+import type { Player, PlayerEventPrefs, UserPreferences } from "@/types/api";
+import { getPlayers, getPreferences, updatePlayers, updatePlayerEvents } from "@/lib/api";
 
 interface UsePreferencesResult {
   players: Player[];
@@ -8,7 +8,7 @@ interface UsePreferencesResult {
   isLoading: boolean;
   error: string | null;
   togglePlayer: (playerId: number) => Promise<void>;
-  toggleEvent: (key: keyof EventPreferences, value: boolean) => Promise<void>;
+  togglePlayerEvent: (playerId: number, eventType: "home_run" | "strikeout", value: boolean) => Promise<void>;
   refresh: () => Promise<void>;
 }
 
@@ -48,8 +48,8 @@ export function usePreferences(token: string | null): UsePreferencesResult {
         ? current.filter((id) => id !== playerId)
         : [...current, playerId];
       try {
-        const updated = await updatePlayers(token, next);
-        setPreferences(updated);
+        await updatePlayers(token, next);
+        setPreferences({ ...preferences, player_ids: next });
       } catch (e) {
         setError(e instanceof Error ? e.message : "設定の更新に失敗しました");
       }
@@ -57,14 +57,25 @@ export function usePreferences(token: string | null): UsePreferencesResult {
     [token, preferences]
   );
 
-  const toggleEvent = useCallback(
-    async (key: keyof EventPreferences, value: boolean) => {
+  const togglePlayerEvent = useCallback(
+    async (playerId: number, eventType: "home_run" | "strikeout", value: boolean) => {
       if (!token || !preferences) return;
-      const next: EventPreferences = { ...preferences.event_prefs, [key]: value };
+      const key = String(playerId);
+      const current = preferences.player_event_prefs[key] ?? {};
+      const optimisticPrefs = {
+        ...preferences,
+        player_event_prefs: {
+          ...preferences.player_event_prefs,
+          [key]: { ...current, [eventType]: value },
+        },
+      };
+      // オプティミスティック更新: API完了を待たずに即座に反映
+      setPreferences(optimisticPrefs);
       try {
-        const updated = await updateEvents(token, next);
-        setPreferences(updated);
+        await updatePlayerEvents(token, playerId, { [eventType]: value });
       } catch (e) {
+        // 失敗時はロールバック
+        setPreferences(preferences);
         setError(e instanceof Error ? e.message : "設定の更新に失敗しました");
       }
     },
@@ -77,7 +88,7 @@ export function usePreferences(token: string | null): UsePreferencesResult {
     isLoading,
     error,
     togglePlayer,
-    toggleEvent,
+    togglePlayerEvent,
     refresh: load,
   };
 }

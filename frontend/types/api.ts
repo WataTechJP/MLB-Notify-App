@@ -6,16 +6,17 @@ export interface Player {
   team: string;
 }
 
-export interface EventPreferences {
-  home_run: boolean;
-  strikeout: boolean;
+export interface PlayerEventPrefs {
+  home_run?: boolean;  // 打者 / two_way のみ
+  strikeout?: boolean; // 投手 / two_way のみ
 }
 
 export interface UserPreferences {
   expo_push_token: string;
   is_active: boolean;
   player_ids: number[];
-  event_prefs: EventPreferences;
+  event_prefs: Record<string, boolean>; // 後方互換として残す
+  player_event_prefs: Record<string, PlayerEventPrefs>;
 }
 
 export interface RegisterUserResponse {

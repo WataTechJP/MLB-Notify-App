@@ -9,12 +9,11 @@ import {
 import { usePushToken } from "@/hooks/usePushToken";
 import { usePreferences } from "@/hooks/usePreferences";
 import { PlayerCard } from "@/components/PlayerCard";
-import { EventToggle } from "@/components/EventToggle";
 import { Colors } from "@/constants/colors";
 
 export default function SettingsScreen() {
   const { token } = usePushToken();
-  const { players, preferences, isLoading, error, togglePlayer, toggleEvent, refresh } =
+  const { players, preferences, isLoading, error, togglePlayer, refresh } =
     usePreferences(token);
 
   if (isLoading) {
@@ -44,23 +43,6 @@ export default function SettingsScreen() {
           <Text style={styles.errorText}>{error}</Text>
         </View>
       )}
-
-      {/* 通知イベント設定 */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>通知するイベント</Text>
-        <EventToggle
-          label="⚾ ホームラン"
-          description="選手がホームランを打ったとき通知"
-          value={preferences?.event_prefs.home_run ?? false}
-          onValueChange={(v) => toggleEvent("home_run", v)}
-        />
-        <EventToggle
-          label="🔥 奪三振"
-          description="選手が奪三振を記録したとき通知"
-          value={preferences?.event_prefs.strikeout ?? false}
-          onValueChange={(v) => toggleEvent("strikeout", v)}
-        />
-      </View>
 
       {/* 選手設定 */}
       <View style={styles.section}>

@@ -1,8 +1,8 @@
 import type {
   Player,
+  PlayerEventPrefs,
   UserPreferences,
   RegisterUserResponse,
-  EventPreferences,
 } from "@/types/api";
 
 const API_BASE =
@@ -40,6 +40,9 @@ async function request<T>(
     }
     throw new Error(`通信エラーが発生しました (${res.status})`);
   }
+  if (res.status === 204) {
+    return undefined as T;
+  }
   return res.json() as Promise<T>;
 }
 
@@ -65,8 +68,8 @@ export async function getPreferences(token: string): Promise<UserPreferences> {
 export async function updatePlayers(
   token: string,
   playerIds: number[]
-): Promise<UserPreferences> {
-  return request<UserPreferences>(
+): Promise<void> {
+  return request<void>(
     `/api/v1/preferences/${encodedToken(token)}/players`,
     {
       method: "PUT",
@@ -75,15 +78,16 @@ export async function updatePlayers(
   );
 }
 
-export async function updateEvents(
+export async function updatePlayerEvents(
   token: string,
-  eventPrefs: EventPreferences
-): Promise<UserPreferences> {
-  return request<UserPreferences>(
-    `/api/v1/preferences/${encodedToken(token)}/events`,
+  playerId: number,
+  prefs: PlayerEventPrefs
+): Promise<void> {
+  return request<void>(
+    `/api/v1/preferences/${encodedToken(token)}/player-events`,
     {
       method: "PUT",
-      body: JSON.stringify(eventPrefs),
+      body: JSON.stringify({ player_id: playerId, ...prefs }),
     }
   );
 }

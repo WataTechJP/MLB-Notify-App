@@ -20,6 +20,7 @@ interface PlayerCardProps {
   isSubscribed: boolean;
   onToggle?: () => void;
   showToggle?: boolean;
+  onSettingsPress?: () => void;
 }
 
 export function PlayerCard({
@@ -27,6 +28,7 @@ export function PlayerCard({
   isSubscribed,
   onToggle,
   showToggle = true,
+  onSettingsPress,
 }: PlayerCardProps) {
   return (
     <TouchableOpacity
@@ -51,6 +53,11 @@ export function PlayerCard({
           trackColor={{ false: Colors.disabled, true: Colors.accent }}
           thumbColor={Colors.text}
         />
+      )}
+      {!showToggle && onSettingsPress && (
+        <TouchableOpacity onPress={onSettingsPress} style={styles.settingsBtn} hitSlop={8}>
+          <Text style={styles.settingsIcon}>⚙️</Text>
+        </TouchableOpacity>
       )}
     </TouchableOpacity>
   );
@@ -98,5 +105,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.subtext,
     marginTop: 2,
+  },
+  settingsBtn: {
+    padding: 4,
+  },
+  settingsIcon: {
+    fontSize: 20,
   },
 });

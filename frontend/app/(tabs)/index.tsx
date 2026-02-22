@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   View,
   Text,
@@ -9,15 +10,25 @@ import {
 import { usePushToken } from "@/hooks/usePushToken";
 import { usePreferences } from "@/hooks/usePreferences";
 import { PlayerCard } from "@/components/PlayerCard";
+import { PlayerEventModal } from "@/components/PlayerEventModal";
 import { Colors } from "@/constants/colors";
+import type { Player } from "@/types/api";
 
 export default function HomeScreen() {
   const { token } = usePushToken();
-  const { players, preferences, isLoading, error, refresh } =
+  const { players, preferences, isLoading, error, togglePlayerEvent, refresh } =
     usePreferences(token);
+  const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
 
   const subscribedPlayers = players.filter((p) =>
     preferences?.player_ids.includes(p.id)
+  );
+
+  const batters = subscribedPlayers.filter(
+    (p) => p.position === "batter" || p.position === "two_way"
+  );
+  const pitchers = subscribedPlayers.filter(
+    (p) => p.position === "pitcher" || p.position === "two_way"
   );
 
   if (isLoading) {
@@ -29,90 +40,84 @@ export default function HomeScreen() {
   }
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl
-          refreshing={isLoading}
-          onRefresh={refresh}
-          tintColor={Colors.accent}
-        />
-      }
-    >
-      <Text style={styles.heading}>MLB 日本人選手</Text>
-      <Text style={styles.subheading}>⚾ 通知ダッシュボード</Text>
+    <>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoading}
+            onRefresh={refresh}
+            tintColor={Colors.accent}
+          />
+        }
+      >
+        <Text style={styles.heading}>MLB 日本人選手</Text>
+        <Text style={styles.subheading}>⚾ 通知ダッシュボード</Text>
 
-      {error && (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      )}
-
-      {/* 通知イベント設定サマリー */}
-      {preferences && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>通知設定</Text>
-          <View style={styles.summaryRow}>
-            <SummaryBadge
-              label="ホームラン"
-              active={preferences.event_prefs.home_run}
-              emoji="💥"
-            />
-            <SummaryBadge
-              label="奪三振"
-              active={preferences.event_prefs.strikeout}
-              emoji="🔥"
-            />
+        {error && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{error}</Text>
           </View>
-        </View>
-      )}
-
-      {/* フォロー中の選手 */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>
-          フォロー中の選手 ({subscribedPlayers.length})
-        </Text>
-        {subscribedPlayers.length === 0 ? (
-          <View style={styles.emptyBox}>
-            <Text style={styles.emptyText}>
-              設定タブから選手を選んでください
-            </Text>
-          </View>
-        ) : (
-          subscribedPlayers.map((player) => (
-            <PlayerCard
-              key={player.id}
-              player={player}
-              isSubscribed={true}
-              showToggle={false}
-            />
-          ))
         )}
-      </View>
-    </ScrollView>
-  );
-}
 
-function SummaryBadge({
-  label,
-  active,
-  emoji,
-}: {
-  label: string;
-  active: boolean;
-  emoji: string;
-}) {
-  return (
-    <View style={[styles.badge, active ? styles.badgeActive : styles.badgeInactive]}>
-      <Text style={styles.badgeEmoji}>{emoji}</Text>
-      <Text style={[styles.badgeLabel, !active && styles.badgeLabelInactive]}>
-        {label}
-      </Text>
-      <Text style={[styles.badgeStatus, active ? styles.statusOn : styles.statusOff]}>
-        {active ? "ON" : "OFF"}
-      </Text>
-    </View>
+        {/* 打者セクション */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>打者 ({batters.length})</Text>
+          {batters.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Text style={styles.emptyText}>設定タブから選手を選んでください</Text>
+            </View>
+          ) : (
+            batters.map((player) => (
+              <PlayerCard
+                key={player.id}
+                player={player}
+                isSubscribed={true}
+                showToggle={false}
+                onSettingsPress={() => setSelectedPlayer(player)}
+              />
+            ))
+          )}
+        </View>
+
+        {/* 投手セクション */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>投手 ({pitchers.length})</Text>
+          {pitchers.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Text style={styles.emptyText}>設定タブから選手を選んでください</Text>
+            </View>
+          ) : (
+            pitchers.map((player) => (
+              <PlayerCard
+                key={player.id}
+                player={player}
+                isSubscribed={true}
+                showToggle={false}
+                onSettingsPress={() => setSelectedPlayer(player)}
+              />
+            ))
+          )}
+        </View>
+      </ScrollView>
+
+      <PlayerEventModal
+        visible={selectedPlayer !== null}
+        onClose={() => setSelectedPlayer(null)}
+        player={selectedPlayer}
+        playerEventPrefs={
+          selectedPlayer
+            ? (preferences?.player_event_prefs[String(selectedPlayer.id)] ?? {})
+            : {}
+        }
+        onToggle={(eventType, value) => {
+          if (selectedPlayer) {
+            togglePlayerEvent(selectedPlayer.id, eventType, value);
+          }
+        }}
+      />
+    </>
   );
 }
 
@@ -152,47 +157,6 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 1,
     marginBottom: 12,
-  },
-  summaryRow: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  badge: {
-    flex: 1,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: "center",
-    gap: 4,
-    borderWidth: 1,
-  },
-  badgeActive: {
-    backgroundColor: Colors.card,
-    borderColor: Colors.accent,
-  },
-  badgeInactive: {
-    backgroundColor: Colors.card,
-    borderColor: Colors.border,
-  },
-  badgeEmoji: {
-    fontSize: 24,
-  },
-  badgeLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: Colors.text,
-  },
-  badgeLabelInactive: {
-    color: Colors.subtext,
-  },
-  badgeStatus: {
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  statusOn: {
-    color: Colors.success,
-  },
-  statusOff: {
-    color: Colors.subtext,
   },
   emptyBox: {
     backgroundColor: Colors.card,
