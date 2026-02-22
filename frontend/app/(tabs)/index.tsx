@@ -74,6 +74,7 @@ export default function HomeScreen() {
                 key={player.id}
                 player={player}
                 isSubscribed={true}
+                eventPrefs={preferences?.player_event_prefs[String(player.id)]}
                 showToggle={false}
                 onSettingsPress={() => setSelectedPlayer(player)}
               />
@@ -94,6 +95,7 @@ export default function HomeScreen() {
                 key={player.id}
                 player={player}
                 isSubscribed={true}
+                eventPrefs={preferences?.player_event_prefs[String(player.id)]}
                 showToggle={false}
                 onSettingsPress={() => setSelectedPlayer(player)}
               />
