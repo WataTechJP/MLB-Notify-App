@@ -98,3 +98,13 @@ export async function sendTestNotification(token: string): Promise<void> {
     body: JSON.stringify({ push_token: token }),
   });
 }
+
+export async function sendDemoNotification(
+  token: string,
+  demoType: "batter" | "pitcher" | "mlb_first"
+): Promise<void> {
+  return request<void>("/api/v1/test/send-demo-notification", {
+    method: "POST",
+    body: JSON.stringify({ push_token: token, demo_type: demoType }),
+  });
+}

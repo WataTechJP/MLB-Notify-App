@@ -129,17 +129,16 @@ MLB APP/
 # 1. Redisを起動
 docker compose up -d redis
 
-# 2. Python仮想環境を作成・依存インストール
+# 2. プロジェクトへ移動して依存を同期
 cd backend
-uv venv .venv
 uv sync
 
-# 3. 環境変数を設定
-cp ../.env.example ../.env
+# 3. 環境変数を設定 (backend/.env を読む)
+cp ../.env.example .env
 # .env を必要に応じて編集
 
-# 4. サーバーを起動
-.venv/bin/uvicorn app.main:app --reload --port 8001
+# 4. サーバーを起動 (uv経由で仮想環境の実行ファイルを使う)
+uv run uvicorn app.main:app --reload --port 8001
 ```
 
 起動ログに `Scheduler started (interval=20s)` が出ていれば正常。
@@ -176,7 +175,7 @@ npx expo start
 
 ## 環境変数
 
-### バックエンド (`.env`)
+### バックエンド (`backend/.env`)
 
 | 変数名 | デフォルト | 説明 |
 |--------|-----------|------|
@@ -235,8 +234,17 @@ curl -X PUT http://localhost:8001/api/v1/preferences/ExponentPushToken[xxxxxx]/e
 | 大谷翔平 | 660271 | 投手/野手 | LAD |
 | 吉田正尚 | 807799 | 野手 | BOS |
 | 鈴木誠也 | 673548 | 野手 | CHC |
-| 今永昇太 | 681936 | 投手 | CHC |
-| 菊池雄星 | 579328 | 投手 | TOR |
+| 今永昇太 | 684007 | 投手 | CHC |
+| 菊池雄星 | 579328 | 投手 | LAA |
+| ダルビッシュ有 | 506433 | 投手 | SD |
+| 千賀滉大 | 673540 | 投手 | NYM |
+| 山本由伸 | 808967 | 投手 | LAD |
+| 佐々木朗希 | 808963 | 投手 | LAD |
+| 松井裕樹 | 673513 | 投手 | SD |
+| 小笠原慎之介 | 829272 | 投手 | WSH |
+| 菅野智之 | 608372 | 投手 | BAL |
+| 村上宗隆 | 808959 | 野手 | CWS |
+| 岡本和真 | 672960 | 野手 | TOR |
 
 選手追加は `backend/app/constants/japanese_players.py` を編集。
 

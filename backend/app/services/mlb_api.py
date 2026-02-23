@@ -70,3 +70,73 @@ def extract_plays(feed: dict) -> list[dict]:
         return feed["liveData"]["plays"]["allPlays"]
     except (KeyError, TypeError):
         return []
+
+
+def _extract_stat_total(stats: list[dict], stat_type: str, stat_key: str) -> int | None:
+    """stats配列から season/career の集計値を取り出す"""
+    target = stat_type.lower()
+    for entry in stats:
+        type_name = (
+            entry.get("type", {}).get("displayName")
+            or entry.get("type", {}).get("code")
+            or ""
+        )
+        if str(type_name).lower() != target:
+            continue
+
+        splits = entry.get("splits", [])
+        if not splits:
+            return 0
+
+        stat = splits[0].get("stat", {})
+        raw = stat.get(stat_key)
+        if raw is None:
+            return 0
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return 0
+    return None
+
+
+async def get_player_event_totals(
+    client: httpx.AsyncClient,
+    player_id: int,
+    event_type: str,
+) -> tuple[int | None, int | None]:
+    """
+    対象イベントの今季通算/MLB通算を取得する
+    - home_run -> hitting.homeRuns
+    - strikeout -> pitching.strikeOuts
+    """
+    if event_type == "home_run":
+        group = "hitting"
+        stat_key = "homeRuns"
+    elif event_type == "strikeout":
+        group = "pitching"
+        stat_key = "strikeOuts"
+    else:
+        return None, None
+
+    url = f"{settings.mlb_api_base_url}/v1/people/{player_id}/stats"
+    params = {
+        "stats": "season,career",
+        "group": group,
+        "season": date.today().year,
+    }
+
+    try:
+        resp = await client.get(url, params=params, timeout=10.0)
+        resp.raise_for_status()
+        data = resp.json()
+    except httpx.HTTPError as e:
+        logger.warning(
+            "Failed to fetch player stats: player=%s event=%s err=%s",
+            player_id, event_type, e,
+        )
+        return None, None
+
+    stats = data.get("stats", [])
+    season_total = _extract_stat_total(stats, "season", stat_key)
+    career_total = _extract_stat_total(stats, "career", stat_key)
+    return season_total, career_total

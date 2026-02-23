@@ -22,6 +22,20 @@ register_router = APIRouter()
 # GET/PUT /api/v1/preferences/{push_token}/...
 preferences_router = APIRouter()
 
+# 既存データ互換: 過去に誤って登録された/変更された player_id を現行IDへ寄せる
+LEGACY_PLAYER_ID_MAP: dict[int, int] = {
+    681936: 684007,  # 今永昇太
+}
+
+
+def _normalize_player_ids(player_ids: list[int]) -> list[int]:
+    normalized: list[int] = []
+    for pid in player_ids:
+        canonical = LEGACY_PLAYER_ID_MAP.get(pid, pid)
+        normalized.append(canonical)
+    # 重複除去（順序維持）
+    return list(dict.fromkeys(normalized))
+
 
 async def _seed_player_event_prefs(db: AsyncSession, user_id: int) -> None:
     """選手ごとのイベント設定をシードする（既存レコードはスキップ）。
@@ -95,17 +109,20 @@ async def get_preferences(
     player_event_prefs_rows = player_event_result.scalars().all()
 
     # {"660271": {"home_run": true, "strikeout": false}, ...}
+    # 互換対応: 旧player_idがあれば現行IDへ寄せて返す
     player_event_prefs: dict[str, dict[str, bool]] = {}
     for row in player_event_prefs_rows:
-        key = str(row.player_id)
+        key = str(LEGACY_PLAYER_ID_MAP.get(row.player_id, row.player_id))
         if key not in player_event_prefs:
             player_event_prefs[key] = {}
         player_event_prefs[key][row.event_type] = row.is_enabled
 
+    normalized_player_ids = _normalize_player_ids([p.player_id for p in players])
+
     return PreferencesResponse(
         expo_push_token=user.expo_push_token,
         is_active=user.is_active,
-        player_ids=[p.player_id for p in players],
+        player_ids=normalized_player_ids,
         event_prefs={p.event_type: p.is_enabled for p in prefs},
         player_event_prefs=player_event_prefs,
     )
@@ -121,8 +138,8 @@ async def update_player_prefs(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # 重複IDを除去しつつ順序は維持
-    unique_player_ids = list(dict.fromkeys(body.player_ids))
+    # 互換対応: 旧player_idを現行IDへ変換し、重複除去（順序維持）
+    unique_player_ids = _normalize_player_ids(body.player_ids)
 
     # 無効な選手IDチェック
     invalid = [pid for pid in unique_player_ids if pid not in PLAYER_MAP]

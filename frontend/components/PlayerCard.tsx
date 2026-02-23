@@ -32,9 +32,14 @@ export function PlayerCard({
   showToggle = true,
   onSettingsPress,
 }: PlayerCardProps) {
+  const canHomeRun = player.position === "batter" || player.position === "two_way";
+  const canStrikeout = player.position === "pitcher" || player.position === "two_way";
+  const isHomeRunEnabled = canHomeRun && (eventPrefs?.home_run ?? true);
+  const isStrikeoutEnabled = canStrikeout && (eventPrefs?.strikeout ?? true);
+
   const enabledLabels = [
-    eventPrefs?.home_run && "HR",
-    eventPrefs?.strikeout && "奪三振",
+    isHomeRunEnabled && "HR",
+    isStrikeoutEnabled && "奪三振",
   ].filter((v): v is string => typeof v === "string");
   return (
     <TouchableOpacity
