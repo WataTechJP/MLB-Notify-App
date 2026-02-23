@@ -33,13 +33,27 @@ export async function requestAndGetToken(): Promise<string> {
     throw new Error("通知の許可が得られませんでした。設定から通知を有効にしてください。");
   }
 
+  const projectIdFromExtra = Constants.expoConfig?.extra?.eas?.projectId;
+  const projectIdFromEas = Constants.easConfig?.projectId;
+  const projectIdFromEnv = process.env.EXPO_PUBLIC_EAS_PROJECT_ID;
   const projectId =
-    Constants.expoConfig?.extra?.eas?.projectId ??
-    Constants.easConfig?.projectId;
+    [projectIdFromExtra, projectIdFromEas, projectIdFromEnv]
+      .find((id): id is string => typeof id === "string" && id.trim().length > 0)
+      ?.trim() ?? null;
 
-  const tokenData = await Notifications.getExpoPushTokenAsync(
-    projectId ? { projectId } : undefined
-  );
+  if (!projectId) {
+    throw new Error(
+      [
+        "No projectID found.",
+        "EAS project ID を設定してください。",
+        "1) Expo Dashboard > Project > Project ID を確認",
+        "2) frontend/.env に EXPO_PUBLIC_EAS_PROJECT_ID=<Project ID> を追加",
+        "3) 開発サーバーを再起動",
+      ].join("\n")
+    );
+  }
+
+  const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
 
   return tokenData.data;
 }

@@ -52,6 +52,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "612ec7e5-a919-43ad-b8ed-de713e125cf1"
+      }
+    },
+    "owner": "wattech"
   }
 }
