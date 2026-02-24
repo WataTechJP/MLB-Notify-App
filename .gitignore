@@ -30,3 +30,6 @@ backend/data/
 
 # macOS
 .DS_Store
+
+#
+PROJECT_EXPLAINED_FOR_NON_ENGINEERS.md
