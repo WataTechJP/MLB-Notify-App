@@ -121,16 +121,24 @@ def _calc_next_run_time(
 
 
 def _reschedule(next_run: datetime) -> None:
-    """ジョブの次回実行時刻を DateTrigger で更新する"""
+    """次回実行ジョブを upsert する（DateTrigger 単発実行に対応）"""
     if _scheduler is None or not _scheduler.running:
         return
     # 過去時刻への設定を防止（最低 5 秒後）
     now = _utcnow()
     if next_run < now + timedelta(seconds=5):
         next_run = now + timedelta(seconds=5)
-    _scheduler.reschedule_job(
-        "mlb_poll",
+    # DateTrigger の単発ジョブは実行時に削除されるため、
+    # reschedule_job ではなく add_job(replace_existing=True) で
+    # 常に次回ジョブを作り直す。
+    _scheduler.add_job(
+        _poll_job,
         trigger=DateTrigger(run_date=next_run),
+        id="mlb_poll",
+        name="MLB event polling",
+        replace_existing=True,
+        max_instances=1,
+        misfire_grace_time=60,
     )
     delay = (next_run - _utcnow()).total_seconds()
     logger.info(
