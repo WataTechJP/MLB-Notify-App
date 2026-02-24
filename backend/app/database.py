@@ -4,19 +4,46 @@ from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
 
-# SQLiteのみサポート (スキーム検証)
-if not settings.database_url.startswith("sqlite+aiosqlite:///"):
-    raise ValueError("Only sqlite+aiosqlite:/// scheme is supported for DATABASE_URL")
+def _normalize_database_url(raw_url: str) -> str:
+    """
+    DATABASE_URL を SQLAlchemy async 用URLへ正規化する。
+    - postgresql+asyncpg://...      -> そのまま
+    - postgresql://...              -> postgresql+asyncpg://... に変換
+    - postgres://...                -> postgresql+asyncpg://... に変換
+    - sqlite+aiosqlite:///...       -> そのまま
+    - sqlite:///...                 -> sqlite+aiosqlite:///... に変換
+    """
+    if raw_url.startswith("postgresql+asyncpg://"):
+        return raw_url
+    if raw_url.startswith("postgresql://"):
+        return raw_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    if raw_url.startswith("postgres://"):
+        return raw_url.replace("postgres://", "postgresql+asyncpg://", 1)
+    if raw_url.startswith("sqlite+aiosqlite:///"):
+        return raw_url
+    if raw_url.startswith("sqlite:///"):
+        return raw_url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
+    raise ValueError(
+        "Unsupported DATABASE_URL. Use postgresql://, postgres://, "
+        "postgresql+asyncpg://, sqlite:/// or sqlite+aiosqlite:///"
+    )
+
+DATABASE_URL = _normalize_database_url(settings.database_url)
 
 # SQLiteのDBファイル用ディレクトリを自動作成
-db_path = settings.database_url[len("sqlite+aiosqlite:///"):]
-os.makedirs(os.path.dirname(db_path) if os.path.dirname(db_path) else ".", exist_ok=True)
-
-engine = create_async_engine(
-    settings.database_url,
-    echo=settings.debug,
-    connect_args={"check_same_thread": False},
-)
+if DATABASE_URL.startswith("sqlite+aiosqlite:///"):
+    db_path = DATABASE_URL[len("sqlite+aiosqlite:///"):]
+    os.makedirs(os.path.dirname(db_path) if os.path.dirname(db_path) else ".", exist_ok=True)
+    engine = create_async_engine(
+        DATABASE_URL,
+        echo=settings.debug,
+        connect_args={"check_same_thread": False},
+    )
+else:
+    engine = create_async_engine(
+        DATABASE_URL,
+        echo=settings.debug,
+    )
 
 AsyncSessionLocal = async_sessionmaker(
     engine,
