@@ -2,7 +2,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+import logging
 
 from app.constants.japanese_players import PLAYER_MAP
 from app.database import get_db
@@ -21,6 +23,7 @@ register_router = APIRouter()
 
 # GET/PUT /api/v1/preferences/{push_token}/...
 preferences_router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # 既存データ互換: 過去に誤って登録された/変更された player_id を現行IDへ寄せる
 LEGACY_PLAYER_ID_MAP: dict[int, int] = {
@@ -82,12 +85,30 @@ async def _get_or_create_user(db: AsyncSession, push_token: str) -> tuple[User, 
     return user, created
 
 
+async def _get_user_by_token(db: AsyncSession, push_token: str) -> User | None:
+    result = await db.execute(select(User).where(User.expo_push_token == push_token))
+    return result.scalar_one_or_none()
+
+
 @register_router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
 async def register_user(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     """Expo Push Tokenを登録（既存なら更新）する"""
-    user, _ = await _get_or_create_user(db, body.expo_push_token)
-
-    await db.commit()
+    try:
+        user, _ = await _get_or_create_user(db, body.expo_push_token)
+        await db.commit()
+    except IntegrityError:
+        # 同一トークンの同時初回登録競合を吸収して成功扱いにする
+        await db.rollback()
+        logger.warning(
+            "register_user race detected for push token; retrying as fetch",
+            exc_info=True,
+        )
+        user = await _get_user_by_token(db, body.expo_push_token)
+        if user is None:
+            raise HTTPException(status_code=500, detail="Failed to register user")
+        user.is_active = True
+        await _seed_player_event_prefs(db, user.id)
+        await db.commit()
     await db.refresh(user)
     return user
 
@@ -100,9 +121,23 @@ async def get_preferences(
     push_token: PushTokenPath, db: AsyncSession = Depends(get_db)
 ):
     """ユーザー設定を取得する。未登録なら自動作成する。"""
-    user, _ = await _get_or_create_user(db, push_token)
-    # 新規作成/不足設定の補完を確実に永続化する
-    await db.commit()
+    try:
+        user, _ = await _get_or_create_user(db, push_token)
+        # 新規作成/不足設定の補完を確実に永続化する
+        await db.commit()
+    except IntegrityError:
+        # register と同時に作成が走った場合でも 500 ではなく継続する
+        await db.rollback()
+        logger.warning(
+            "get_preferences race detected for push token; retrying as fetch",
+            exc_info=True,
+        )
+        user = await _get_user_by_token(db, push_token)
+        if user is None:
+            raise HTTPException(status_code=500, detail="Failed to load preferences")
+        user.is_active = True
+        await _seed_player_event_prefs(db, user.id)
+        await db.commit()
     await db.refresh(user)
 
     player_result = await db.execute(select(UserPlayer).where(UserPlayer.user_id == user.id))
