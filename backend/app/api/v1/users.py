@@ -57,16 +57,17 @@ async def _seed_player_event_prefs(db: AsyncSession, user_id: int) -> None:
                 db.add(UserPlayerEventPref(user_id=user_id, player_id=player_id, event_type="strikeout", is_enabled=True))
 
 
-@register_router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
-async def register_user(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    """Expo Push Tokenを登録（既存なら更新）する"""
-    result = await db.execute(select(User).where(User.expo_push_token == body.expo_push_token))
+async def _get_or_create_user(db: AsyncSession, push_token: str) -> tuple[User, bool]:
+    """Push token からユーザーを取得。存在しなければ初期設定付きで作成する。"""
+    result = await db.execute(select(User).where(User.expo_push_token == push_token))
     user = result.scalar_one_or_none()
+    created = False
 
     if user is None:
-        user = User(expo_push_token=body.expo_push_token, is_active=True)
+        user = User(expo_push_token=push_token, is_active=True)
         db.add(user)
         await db.flush()
+        created = True
 
         # デフォルトで全選手・全イベントを購読
         for player_id in PLAYER_MAP:
@@ -76,8 +77,15 @@ async def register_user(body: RegisterRequest, db: AsyncSession = Depends(get_db
     else:
         user.is_active = True
 
-    # 選手ごとのイベント設定をシード（既存ユーザーにもなければ追加）
+    # 既存ユーザーにも不足分を補完
     await _seed_player_event_prefs(db, user.id)
+    return user, created
+
+
+@register_router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
+async def register_user(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    """Expo Push Tokenを登録（既存なら更新）する"""
+    user, _ = await _get_or_create_user(db, body.expo_push_token)
 
     await db.commit()
     await db.refresh(user)
@@ -91,11 +99,11 @@ PushTokenPath = Annotated[str, Path(pattern=r"^ExponentPushToken\[.+\]$", descri
 async def get_preferences(
     push_token: PushTokenPath, db: AsyncSession = Depends(get_db)
 ):
-    """ユーザー設定を取得する"""
-    result = await db.execute(select(User).where(User.expo_push_token == push_token))
-    user = result.scalar_one_or_none()
-    if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
+    """ユーザー設定を取得する。未登録なら自動作成する。"""
+    user, _ = await _get_or_create_user(db, push_token)
+    # 新規作成/不足設定の補完を確実に永続化する
+    await db.commit()
+    await db.refresh(user)
 
     player_result = await db.execute(select(UserPlayer).where(UserPlayer.user_id == user.id))
     players = player_result.scalars().all()
