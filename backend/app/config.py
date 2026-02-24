@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     poll_interval_seconds: int = 20
     mlb_api_base_url: str = "https://statsapi.mlb.com/api"
     debug: bool = False
+    # R=レギュラーシーズン, S=Spring Training, P=ポストシーズン
+    # ※ MLB Stats API は単一値のみ対応。シーズンタイプを変更する場合は
+    #   この値を書き換えてサーバーを再起動してください。
+    game_type: str = "S"
 
 
 settings = Settings()

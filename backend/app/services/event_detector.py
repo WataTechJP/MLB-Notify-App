@@ -105,13 +105,16 @@ def _build_notification_message(
                 "これがMLB初ホームランです。"
             )
             return title, body
-        if today_count is not None and season_total is not None and career_total is not None:
+        # season_total > 0 のときのみシーズン成績を表示（Spring Training等でNone/0の場合は省略）
+        if today_count is not None and season_total and (career_total is not None):
             body = (
                 f"{name}選手が本日{today_count}本目のホームランを打ちました！"
                 f"これで今シーズン{season_total}本目、MLB通算{career_total}本目です。"
             )
             return title, body
-        return title, f"{name} がホームランを打ちました！"
+        if today_count is not None:
+            return title, f"{name}選手が本日{today_count}本目のホームランを打ちました！"
+        return title, f"{name}選手がホームランを打ちました！"
     elif event_type == "strikeout":
         title = f"🔥 {name} 奪三振！"
         if today_count is not None and career_total == 1:
@@ -120,13 +123,16 @@ def _build_notification_message(
                 "これがMLB初奪三振です。"
             )
             return title, body
-        if today_count is not None and season_total is not None and career_total is not None:
+        # season_total > 0 のときのみシーズン成績を表示（Spring Training等でNone/0の場合は省略）
+        if today_count is not None and season_total and (career_total is not None):
             body = (
                 f"{name}選手が本日{today_count}個目の三振を奪いました！"
                 f"これで今シーズン{season_total}個目、MLB通算{career_total}個目です。"
             )
             return title, body
-        return title, f"{name} が三振を奪いました！"
+        if today_count is not None:
+            return title, f"{name}選手が本日{today_count}個目の三振を奪いました！"
+        return title, f"{name}選手が三振を奪いました！"
     else:
         return f"{name} イベント発生", f"{name} にイベントが発生しました"
 

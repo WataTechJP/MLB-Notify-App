@@ -17,11 +17,14 @@ _http_client: httpx.AsyncClient | None = None
 
 async def _poll_job() -> None:
     """APSchedulerから定期実行されるジョブ"""
-    logger.debug("Polling MLB API...")
+    if _http_client is None:
+        logger.warning("HTTP client not initialized, skipping poll")
+        return
+    logger.debug("Polling MLB API... (game_type=%s)", settings.game_type)
     try:
         redis = await get_redis()
         async with AsyncSessionLocal() as db:
-            await detect_events(redis, db, _http_client)
+            await detect_events(redis, db, _http_client, game_type=settings.game_type)
     except Exception as e:
         logger.error("Poll job error: %s", e, exc_info=True)
 
@@ -43,7 +46,11 @@ def start_scheduler() -> None:
         max_instances=1,
     )
     _scheduler.start()
-    logger.info("Scheduler started (interval=%ds)", settings.poll_interval_seconds)
+    logger.info(
+        "Scheduler started (interval=%ds, game_type=%s)",
+        settings.poll_interval_seconds,
+        settings.game_type,
+    )
 
 
 async def stop_scheduler() -> None:
