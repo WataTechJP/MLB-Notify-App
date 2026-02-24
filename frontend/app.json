@@ -17,7 +17,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.mlb.notification",
       "infoPlist": {
-        "NSUserNotificationUsageDescription": "MLB日本人選手のホームランや奪三振をリアルタイムで通知するために使用します。"
+        "NSUserNotificationUsageDescription": "MLB日本人選手のホームランや奪三振をリアルタイムで通知するために使用します。",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
