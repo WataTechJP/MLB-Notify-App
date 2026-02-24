@@ -1,12 +1,21 @@
 import logging
-from datetime import date
+from dataclasses import dataclass
+from datetime import date, datetime
 
 import httpx
-import pytz
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class GameScheduleEntry:
+    game_pk: int
+    game_time_utc: datetime        # UTC tzinfo 付き
+    abstract_game_state: str       # "Preview" | "Live" | "Final"
+    detailed_state: str | None
+
 
 # MLB Stats APIのフィールドを絞り込んでレスポンスを軽量化
 LIVE_FEED_FIELDS = (
@@ -39,6 +48,57 @@ async def get_todays_games(client: httpx.AsyncClient, game_type: str = "R") -> l
 
     logger.debug("Today's games: %s", game_pks)
     return game_pks
+
+
+async def get_todays_schedule(
+    client: httpx.AsyncClient,
+    game_type: str = "R",
+) -> list[GameScheduleEntry]:
+    """
+    /v1/schedule から gamePk + gameDate + status を取得する。
+    fields パラメータで軽量化し、gameDate を UTC 付き datetime に変換して返す。
+    """
+    today = date.today().strftime("%Y-%m-%d")
+    url = f"{settings.mlb_api_base_url}/v1/schedule"
+    params = {
+        "sportId": 1,
+        "date": today,
+        "gameType": game_type,
+        "fields": "dates,games,gamePk,gameDate,status,abstractGameState,detailedState",
+    }
+
+    try:
+        resp = await client.get(url, params=params, timeout=10.0)
+        resp.raise_for_status()
+        data = resp.json()
+    except httpx.HTTPError as e:
+        logger.error("Failed to fetch today's schedule: %s", e)
+        return []
+
+    entries: list[GameScheduleEntry] = []
+    for date_entry in data.get("dates", []):
+        for game in date_entry.get("games", []):
+            game_pk = game.get("gamePk")
+            game_date_str = game.get("gameDate", "")
+            status = game.get("status", {})
+            abstract_state = status.get("abstractGameState", "Preview")
+            detailed_state = status.get("detailedState")
+
+            try:
+                game_time_utc = datetime.fromisoformat(game_date_str.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                logger.warning("Could not parse gameDate: %s", game_date_str)
+                continue
+
+            entries.append(GameScheduleEntry(
+                game_pk=game_pk,
+                game_time_utc=game_time_utc,
+                abstract_game_state=abstract_state,
+                detailed_state=detailed_state,
+            ))
+
+    logger.debug("Today's schedule entries: %d games", len(entries))
+    return entries
 
 
 async def get_live_feed(client: httpx.AsyncClient, game_pk: int) -> dict | None:

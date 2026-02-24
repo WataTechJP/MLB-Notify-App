@@ -1,4 +1,8 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# MLB Stats API で有効な gameType 値
+_VALID_GAME_TYPES = {"R", "S", "P", "E", "D", "L", "W"}
 
 
 class Settings(BaseSettings):
@@ -10,13 +14,42 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
     database_url: str = "sqlite+aiosqlite:///./data/mlb_app.db"
-    poll_interval_seconds: int = 20
     mlb_api_base_url: str = "https://statsapi.mlb.com/api"
     debug: bool = False
     # R=レギュラーシーズン, S=Spring Training, P=ポストシーズン
     # ※ MLB Stats API は単一値のみ対応。シーズンタイプを変更する場合は
     #   この値を書き換えてサーバーを再起動してください。
     game_type: str = "S"
+
+    # アダプティブ・ポーリング設定
+    poll_live_seconds: int = 20          # LIVE状態の間隔
+    poll_pregame_seconds: int = 60       # PREGAME状態の間隔
+    poll_post_game_seconds: int = 120    # POST_GAME状態の間隔
+    poll_post_game_count: int = 3        # POST_GAME追い込み回数
+    poll_idle_minutes: int = 30          # IDLE状態の間隔（デフォルト）
+    poll_idle_night_hours: int = 1       # ET 深夜帯の間隔
+    pregame_window_minutes: int = 15     # PREGAME判定ウィンドウ
+
+    @field_validator("poll_live_seconds", "poll_pregame_seconds", "poll_post_game_seconds")
+    @classmethod
+    def validate_min_poll_interval(cls, v: int) -> int:
+        if v < 5:
+            raise ValueError("Polling interval must be at least 5 seconds")
+        return v
+
+    @field_validator("poll_idle_minutes")
+    @classmethod
+    def validate_idle_minutes(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("poll_idle_minutes must be at least 1")
+        return v
+
+    @field_validator("game_type")
+    @classmethod
+    def validate_game_type(cls, v: str) -> str:
+        if v not in _VALID_GAME_TYPES:
+            raise ValueError(f"Invalid game_type '{v}'. Must be one of {_VALID_GAME_TYPES}")
+        return v
 
 
 settings = Settings()

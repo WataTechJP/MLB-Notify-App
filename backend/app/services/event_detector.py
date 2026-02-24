@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.japanese_players import BATTER_IDS, PITCHER_IDS, PLAYER_MAP
-from app.models.user import User, UserEventPref, UserPlayer, UserPlayerEventPref
+from app.models.user import User, UserPlayer, UserPlayerEventPref
 from app.services.mlb_api import (
     extract_plays,
     get_live_feed,
@@ -21,8 +21,12 @@ from app.services.notification import send_notifications
 
 logger = logging.getLogger(__name__)
 
+# fire-and-forget タスクをGCされないよう保持するセット
+_background_tasks: set[asyncio.Task] = set()
+
 
 def _handle_notification_task_error(task: asyncio.Task) -> None:
+    _background_tasks.discard(task)
     if not task.cancelled() and task.exception():
         logger.error("Notification task failed: %s", task.exception(), exc_info=task.exception())
 
@@ -204,6 +208,7 @@ async def _process_play(
             career_total=career_total,
         )
         task = asyncio.create_task(send_notifications(http_client, tokens, title, body))
+        _background_tasks.add(task)
         task.add_done_callback(_handle_notification_task_error)
 
     except Exception as e:
@@ -215,9 +220,18 @@ async def detect_events(
     db: AsyncSession,
     http_client: httpx.AsyncClient,
     game_type: str = "R",
+    include_final: bool = False,
+    game_pks: list[int] | None = None,
 ) -> None:
-    """メインのイベント検知処理 (スケジューラーから20秒ごとに呼ばれる)"""
-    game_pks = await get_todays_games(http_client, game_type=game_type)
+    """
+    メインのイベント検知処理 (LIVE時およびPOST_GAME追い込み時に呼ばれる)。
+
+    Args:
+        include_final: True の場合、Final 状態の試合フィードも処理する（POST_GAME用）。
+        game_pks: 処理対象の gamePk リスト。None の場合はスケジュールAPIから取得する。
+    """
+    if game_pks is None:
+        game_pks = await get_todays_games(http_client, game_type=game_type)
     if not game_pks:
         logger.debug("No games today")
         return
@@ -230,7 +244,7 @@ async def detect_events(
     for game_pk, feed in zip(game_pks, feeds):
         if isinstance(feed, Exception) or feed is None:
             continue
-        if not is_live_game(feed):
+        if not is_live_game(feed) and not include_final:
             continue
 
         plays = extract_plays(feed)
