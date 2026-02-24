@@ -1,18 +1,18 @@
 FROM python:3.11-slim
 
-WORKDIR /app
+WORKDIR /app/backend
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Install Python dependencies
-COPY requirements.txt .
+# Install Python dependencies for backend
+COPY backend/requirements.txt ./requirements.txt
 RUN python -m pip install --upgrade pip \
     && python -m pip install --no-cache-dir -r requirements.txt
 
-# Copy app source
-COPY app/ ./app/
-RUN mkdir -p /app/data
+# Copy backend source only
+COPY backend/app ./app
+RUN mkdir -p /app/backend/data
 
 EXPOSE 8000
 
