@@ -20,6 +20,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # startup
     logger.info("Starting up MLB notification backend...")
+    logger.info(
+        "Settings: DEBUG=%s ENABLE_TEST_ENDPOINTS=%s",
+        settings.debug,
+        settings.enable_test_endpoints,
+    )
     await create_tables()
     start_scheduler()
     yield

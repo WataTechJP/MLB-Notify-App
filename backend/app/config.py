@@ -1,4 +1,4 @@
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # MLB Stats API で有効な gameType 値
@@ -15,7 +15,11 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     database_url: str = "sqlite+aiosqlite:///./data/mlb_app.db"
     mlb_api_base_url: str = "https://statsapi.mlb.com/api"
-    debug: bool = False
+    debug: bool = Field(default=False, validation_alias="DEBUG")
+    # 本番で /api/v1/test/* を一時的に有効化したい場合に使う
+    enable_test_endpoints: bool = Field(
+        default=False, validation_alias="ENABLE_TEST_ENDPOINTS"
+    )
     # R=レギュラーシーズン, S=Spring Training, P=ポストシーズン
     # ※ MLB Stats API は単一値のみ対応。シーズンタイプを変更する場合は
     #   この値を書き換えてサーバーを再起動してください。
