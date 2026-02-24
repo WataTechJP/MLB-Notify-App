@@ -13,7 +13,10 @@ class Settings(BaseSettings):
     )
 
     redis_url: str = "redis://localhost:6379/0"
-    database_url: str = "sqlite+aiosqlite:///./data/mlb_app.db"
+    database_url: str = Field(
+        default="sqlite+aiosqlite:///./data/mlb_app.db",
+        validation_alias="DATABASE_URL",
+    )
     mlb_api_base_url: str = "https://statsapi.mlb.com/api"
     debug: bool = Field(default=False, validation_alias="DEBUG")
     # 本番で /api/v1/test/* を一時的に有効化したい場合に使う
