@@ -1,12 +1,21 @@
 import logging
-from datetime import date
+from dataclasses import dataclass
+from datetime import date, datetime
 
 import httpx
-import pytz
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class GameScheduleEntry:
+    game_pk: int
+    game_time_utc: datetime        # UTC tzinfo 付き
+    abstract_game_state: str       # "Preview" | "Live" | "Final"
+    detailed_state: str | None
+
 
 # MLB Stats APIのフィールドを絞り込んでレスポンスを軽量化
 LIVE_FEED_FIELDS = (
@@ -41,6 +50,57 @@ async def get_todays_games(client: httpx.AsyncClient, game_type: str = "R") -> l
     return game_pks
 
 
+async def get_todays_schedule(
+    client: httpx.AsyncClient,
+    game_type: str = "R",
+) -> list[GameScheduleEntry]:
+    """
+    /v1/schedule から gamePk + gameDate + status を取得する。
+    fields パラメータで軽量化し、gameDate を UTC 付き datetime に変換して返す。
+    """
+    today = date.today().strftime("%Y-%m-%d")
+    url = f"{settings.mlb_api_base_url}/v1/schedule"
+    params = {
+        "sportId": 1,
+        "date": today,
+        "gameType": game_type,
+        "fields": "dates,games,gamePk,gameDate,status,abstractGameState,detailedState",
+    }
+
+    try:
+        resp = await client.get(url, params=params, timeout=10.0)
+        resp.raise_for_status()
+        data = resp.json()
+    except httpx.HTTPError as e:
+        logger.error("Failed to fetch today's schedule: %s", e)
+        return []
+
+    entries: list[GameScheduleEntry] = []
+    for date_entry in data.get("dates", []):
+        for game in date_entry.get("games", []):
+            game_pk = game.get("gamePk")
+            game_date_str = game.get("gameDate", "")
+            status = game.get("status", {})
+            abstract_state = status.get("abstractGameState", "Preview")
+            detailed_state = status.get("detailedState")
+
+            try:
+                game_time_utc = datetime.fromisoformat(game_date_str.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                logger.warning("Could not parse gameDate: %s", game_date_str)
+                continue
+
+            entries.append(GameScheduleEntry(
+                game_pk=game_pk,
+                game_time_utc=game_time_utc,
+                abstract_game_state=abstract_state,
+                detailed_state=detailed_state,
+            ))
+
+    logger.debug("Today's schedule entries: %d games", len(entries))
+    return entries
+
+
 async def get_live_feed(client: httpx.AsyncClient, game_pk: int) -> dict | None:
     """試合のライブフィードを取得する"""
     url = f"{settings.mlb_api_base_url}/v1.1/game/{game_pk}/feed/live"
@@ -70,3 +130,73 @@ def extract_plays(feed: dict) -> list[dict]:
         return feed["liveData"]["plays"]["allPlays"]
     except (KeyError, TypeError):
         return []
+
+
+def _extract_stat_total(stats: list[dict], stat_type: str, stat_key: str) -> int | None:
+    """stats配列から season/career の集計値を取り出す"""
+    target = stat_type.lower()
+    for entry in stats:
+        type_name = (
+            entry.get("type", {}).get("displayName")
+            or entry.get("type", {}).get("code")
+            or ""
+        )
+        if str(type_name).lower() != target:
+            continue
+
+        splits = entry.get("splits", [])
+        if not splits:
+            return 0
+
+        stat = splits[0].get("stat", {})
+        raw = stat.get(stat_key)
+        if raw is None:
+            return 0
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return 0
+    return None
+
+
+async def get_player_event_totals(
+    client: httpx.AsyncClient,
+    player_id: int,
+    event_type: str,
+) -> tuple[int | None, int | None]:
+    """
+    対象イベントの今季通算/MLB通算を取得する
+    - home_run -> hitting.homeRuns
+    - strikeout -> pitching.strikeOuts
+    """
+    if event_type == "home_run":
+        group = "hitting"
+        stat_key = "homeRuns"
+    elif event_type == "strikeout":
+        group = "pitching"
+        stat_key = "strikeOuts"
+    else:
+        return None, None
+
+    url = f"{settings.mlb_api_base_url}/v1/people/{player_id}/stats"
+    params = {
+        "stats": "season,career",
+        "group": group,
+        "season": date.today().year,
+    }
+
+    try:
+        resp = await client.get(url, params=params, timeout=10.0)
+        resp.raise_for_status()
+        data = resp.json()
+    except httpx.HTTPError as e:
+        logger.warning(
+            "Failed to fetch player stats: player=%s event=%s err=%s",
+            player_id, event_type, e,
+        )
+        return None, None
+
+    stats = data.get("stats", [])
+    season_total = _extract_stat_total(stats, "season", stat_key)
+    career_total = _extract_stat_total(stats, "career", stat_key)
+    return season_total, career_total
