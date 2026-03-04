@@ -91,5 +91,30 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
+      - name: Inject ASC App ID into submit profile
+        env:
+          ASC_APP_ID: ${{ secrets.ASC_APP_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ASC_APP_ID:-}" ]; then
+            echo "ASC_APP_ID secret is missing."
+            echo "Set GitHub Actions Secret: ASC_APP_ID=<App Store Connect App ID>"
+            exit 1
+          fi
+          node <<'NODE'
+          const fs = require('fs');
+          const path = './eas.json';
+          const ascAppId = process.env.ASC_APP_ID;
+          const eas = JSON.parse(fs.readFileSync(path, 'utf8'));
+
+          eas.submit ??= {};
+          eas.submit.production ??= {};
+          eas.submit.production.ascAppId = ascAppId;
+          eas.submit.production.ios ??= {};
+          eas.submit.production.ios.ascAppId = ascAppId;
+
+          fs.writeFileSync(path, `${JSON.stringify(eas, null, 2)}\n`);
+          NODE
+
       - name: Build and auto-submit to TestFlight
         run: eas build --platform ios --profile production --non-interactive --auto-submit --wait
