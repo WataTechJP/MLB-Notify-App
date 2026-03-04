@@ -109,7 +109,6 @@ jobs:
 
           eas.submit ??= {};
           eas.submit.production ??= {};
-          eas.submit.production.ascAppId = ascAppId;
           eas.submit.production.ios ??= {};
           eas.submit.production.ios.ascAppId = ascAppId;
 
