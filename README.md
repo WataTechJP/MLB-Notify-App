@@ -197,3 +197,93 @@ pytest
 - 詳細調査メモ: `RESEARCH.md`
 - 初期仕様: `SPEC.md`
 - 非エンジニア向け解説: `PROJECT_EXPLAINED_FOR_NON_ENGINEERS.md`
+
+## 13. TestFlighリリース後の対応
+
+### ① コードを修正したときの流れ（TestFlight更新）
+
+基本は 同じ流れをもう一度やるだけです。
+
+全体図
+
+コード修正
+↓
+git commit / push
+↓
+eas build
+↓
+eas submit
+↓
+Apple processing
+↓
+TestFlightに新バージョン
+
+⸻
+
+実際のコマンド
+
+1️⃣ コード修正
+
+例
+
+git add .
+git commit -m "fix: push notification bug"
+git push
+
+※これは必須ではないですが、履歴管理のためにおすすめ。
+
+⸻
+
+2️⃣ バージョンを上げる（重要）
+
+iOSは同じバージョンはアップロードできません。
+
+app.json または app.config.ts
+
+{
+  "expo": {
+    "version": "1.0.1"
+  }
+}
+
+または
+
+npx expo version:patch
+
+⸻
+
+3️⃣ ビルド
+
+eas build -p ios
+
+これで
+
+React Native code
+↓
+Xcode build
+↓
+.ipa
+
+が作られます。
+
+⸻
+
+4️⃣ Appleへ送信
+
+eas submit -p ios
+
+⸻
+
+5️⃣ Apple processing
+
+5〜15分
+
+⸻
+
+6️⃣ TestFlight
+
+TestFlightに
+
+version 1.0.1
+
+が追加されます。
