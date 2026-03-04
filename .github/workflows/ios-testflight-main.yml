@@ -1,0 +1,95 @@
+name: iOS TestFlight Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "frontend/**"
+      - ".github/workflows/ios-testflight-main.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-testflight-main
+  cancel-in-progress: false
+
+jobs:
+  build-submit-ios:
+    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message || '', '[skip ci]') }}
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Bump patch version
+        id: bump
+        run: |
+          set -euo pipefail
+          before="$(node -p "require('./app.json').expo.version")"
+          node <<'NODE'
+          const fs = require('fs');
+          const appPath = './app.json';
+          const pkgPath = './package.json';
+          const app = JSON.parse(fs.readFileSync(appPath, 'utf8'));
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+
+          const raw = app?.expo?.version;
+          const parts = String(raw).split('.').map((v) => Number(v));
+          if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) {
+            throw new Error(`expo.version must be semantic version (x.y.z). current=${raw}`);
+          }
+
+          const next = `${parts[0]}.${parts[1]}.${parts[2] + 1}`;
+          app.expo.version = next;
+          pkg.version = next;
+
+          fs.writeFileSync(appPath, `${JSON.stringify(app, null, 2)}\n`);
+          fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
+          console.log(next);
+          NODE
+          after="$(node -p "require('./app.json').expo.version")"
+          echo "before=${before}" >> "$GITHUB_OUTPUT"
+          echo "after=${after}" >> "$GITHUB_OUTPUT"
+          echo "Version bumped: ${before} -> ${after}"
+
+      - name: Commit and push version bump
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/app.json frontend/package.json
+          if git diff --cached --quiet; then
+            echo "No version changes to commit."
+            exit 0
+          fi
+          git commit -m "ci: bump app version to ${{ steps.bump.outputs.after }} [skip ci]"
+          git push origin HEAD:main
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build and auto-submit to TestFlight
+        run: eas build --platform ios --profile production --non-interactive --auto-submit --wait

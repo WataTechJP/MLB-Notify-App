@@ -7,6 +7,8 @@ import type {
 
 const API_BASE =
   process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:8001";
+const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+const RETRY_DELAYS_MS = [500, 1500];
 
 if (!__DEV__ && !API_BASE.startsWith("https://")) {
   console.error("[API] 本番環境ではHTTPSを使用してください。EXPO_PUBLIC_API_BASE_URLをhttps://で始まるURLに設定してください。");
@@ -16,34 +18,67 @@ function encodedToken(token: string): string {
   return encodeURIComponent(token);
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableRequest(path: string, method: string): boolean {
+  if (method === "GET" || method === "PUT") {
+    return true;
+  }
+  return method === "POST" && path === "/api/v1/users/register";
+}
+
 async function request<T>(
   path: string,
   options?: RequestInit
 ): Promise<T> {
   const url = `${API_BASE}${path}`;
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...(options?.headers ?? {}),
-      },
-    });
-  } catch {
-    throw new Error("サーバーに接続できませんでした。ネットワーク接続を確認してください。");
-  }
-  if (!res.ok) {
+  const method = (options?.method ?? "GET").toUpperCase();
+  const retryable = isRetryableRequest(path, method);
+  const maxAttempts = retryable ? 3 : 1;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          ...(options?.headers ?? {}),
+        },
+      });
+    } catch {
+      if (attempt < maxAttempts) {
+        await sleep(RETRY_DELAYS_MS[attempt - 1] ?? 2000);
+        continue;
+      }
+      throw new Error("サーバーに接続できませんでした。ネットワーク接続を確認してください。");
+    }
+
+    if (res.ok) {
+      if (res.status === 204) {
+        return undefined as T;
+      }
+      return res.json() as Promise<T>;
+    }
+
+    if (retryable && RETRYABLE_STATUSES.has(res.status) && attempt < maxAttempts) {
+      if (__DEV__) {
+        console.warn(`[API] retry ${attempt}/${maxAttempts - 1} ${method} ${url} status=${res.status}`);
+      }
+      await sleep(RETRY_DELAYS_MS[attempt - 1] ?? 2000);
+      continue;
+    }
+
     if (__DEV__) {
       const body = await res.text();
       console.error(`[API] ${res.status} ${url}:`, body);
     }
     throw new Error(`通信エラーが発生しました (${res.status})`);
   }
-  if (res.status === 204) {
-    return undefined as T;
-  }
-  return res.json() as Promise<T>;
+
+  throw new Error("通信エラーが発生しました");
 }
 
 export async function registerUser(
