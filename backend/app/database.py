@@ -43,6 +43,8 @@ else:
     engine = create_async_engine(
         DATABASE_URL,
         echo=settings.debug,
+        pool_pre_ping=True,
+        pool_recycle=1800,
     )
 
 AsyncSessionLocal = async_sessionmaker(
