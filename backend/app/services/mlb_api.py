@@ -23,7 +23,7 @@ LIVE_FEED_FIELDS = (
     "liveData,plays,allPlays,"
     "result,event,eventType,"
     "about,atBatIndex,isComplete,"
-    "matchup,batter,id,pitcher,id"
+    "matchup,batter,id,fullName,pitcher,id,fullName"
 )
 
 

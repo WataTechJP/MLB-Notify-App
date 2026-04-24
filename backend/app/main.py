@@ -25,8 +25,15 @@ async def lifespan(app: FastAPI):
         settings.debug,
         settings.enable_test_endpoints,
     )
-    await create_tables()
+    logger.info("Initializing database tables...")
+    try:
+        await create_tables()
+        logger.info("Database tables initialized successfully")
+    except Exception as e:
+        logger.error("Failed to initialize database tables: %s", e)
+        raise
     start_scheduler()
+    logger.info("Scheduler started")
     yield
     # shutdown
     logger.info("Shutting down...")

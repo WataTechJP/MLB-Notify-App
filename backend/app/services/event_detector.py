@@ -96,6 +96,7 @@ def _build_notification_message(
     today_count: int | None = None,
     season_total: int | None = None,
     career_total: int | None = None,
+    opponent_name: str = "",
 ) -> tuple[str, str]:
     """通知タイトルと本文を生成する"""
     player = PLAYER_MAP.get(player_id)
@@ -103,39 +104,41 @@ def _build_notification_message(
 
     if event_type == "home_run":
         title = f"⚾ {name} ホームラン！"
+        pitcher_suffix = f"（対 {opponent_name}）" if opponent_name else ""
         if today_count is not None and career_total == 1:
             body = (
-                f"{name}選手が本日{today_count}本目のホームランを打ちました！"
+                f"{name}選手が本日{today_count}本目のホームランを打ちました{pitcher_suffix}！"
                 "これがMLB初ホームランです。"
             )
             return title, body
         # season_total > 0 のときのみシーズン成績を表示（Spring Training等でNone/0の場合は省略）
         if today_count is not None and season_total and (career_total is not None):
             body = (
-                f"{name}選手が本日{today_count}本目のホームランを打ちました！"
+                f"{name}選手が本日{today_count}本目のホームランを打ちました{pitcher_suffix}！"
                 f"これで今シーズン{season_total}本目、MLB通算{career_total}本目です。"
             )
             return title, body
         if today_count is not None:
-            return title, f"{name}選手が本日{today_count}本目のホームランを打ちました！"
+            return title, f"{name}選手が本日{today_count}本目のホームランを打ちました{pitcher_suffix}！"
         return title, f"{name}選手がホームランを打ちました！"
     elif event_type == "strikeout":
         title = f"🔥 {name} 奪三振！"
+        batter_suffix = f"（{opponent_name}から）" if opponent_name else ""
         if today_count is not None and career_total == 1:
             body = (
-                f"{name}選手が本日{today_count}個目の三振を奪いました！"
+                f"{name}選手が本日{today_count}個目の三振を奪いました{batter_suffix}！"
                 "これがMLB初奪三振です。"
             )
             return title, body
         # season_total > 0 のときのみシーズン成績を表示（Spring Training等でNone/0の場合は省略）
         if today_count is not None and season_total and (career_total is not None):
             body = (
-                f"{name}選手が本日{today_count}個目の三振を奪いました！"
+                f"{name}選手が本日{today_count}個目の三振を奪いました{batter_suffix}！"
                 f"これで今シーズン{season_total}個目、MLB通算{career_total}個目です。"
             )
             return title, body
         if today_count is not None:
-            return title, f"{name}選手が本日{today_count}個目の三振を奪いました！"
+            return title, f"{name}選手が本日{today_count}個目の三振を奪いました{batter_suffix}！"
         return title, f"{name}選手が三振を奪いました！"
     else:
         return f"{name} イベント発生", f"{name} にイベントが発生しました"
@@ -164,7 +167,9 @@ async def _process_play(
             return
 
         batter_id: int = matchup.get("batter", {}).get("id", 0)
+        batter_name: str = matchup.get("batter", {}).get("fullName", "")
         pitcher_id: int = matchup.get("pitcher", {}).get("id", 0)
+        pitcher_name: str = matchup.get("pitcher", {}).get("fullName", "")
 
         # 日本人選手かどうか判定
         if event_type == "home_run" and batter_id in BATTER_IDS:
@@ -200,12 +205,14 @@ async def _process_play(
             event_type,
         )
 
+        opponent_name = pitcher_name if event_type == "home_run" else batter_name
         title, body = _build_notification_message(
             player_id,
             event_type,
             today_count=today_count,
             season_total=season_total,
             career_total=career_total,
+            opponent_name=opponent_name,
         )
         task = asyncio.create_task(send_notifications(http_client, tokens, title, body))
         _background_tasks.add(task)
