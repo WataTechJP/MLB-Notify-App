@@ -494,15 +494,9 @@ Expo Push API のレスポンスに `"status": "error", "details": {"error": "De
 現在この処理は未実装。将来 `notification.py` で無効トークンを検知して `users.is_active = False` にする処理が必要。
 
 ### タイムゾーンについて
-`date.today()` はサーバーのローカル時間を使用。
-サーバーが UTC で動作していると、日本時間の午前9時以降に `today` が変わる (日本-UTC=9時間)。
-MLB の試合スケジュールは東部時間 (ET) ベースのため、UTC サーバーでは問題ない場合がほとんどだが、必要なら `pytz` で ET に固定することを検討する:
-```python
-import pytz
-et = pytz.timezone("America/New_York")
-today = datetime.now(et).strftime("%Y-%m-%d")
-```
-(`pytz` はすでに依存に含まれている)
+MLB の試合スケジュール日付は東部時間 (ET) 基準で扱う。
+日本時間の朝や UTC 深夜帯では、サーバーのローカル日付を使うと「米国ではまだ前日」の試合を取り逃がす。
+そのため `mlb_api.py` では `ZoneInfo("America/New_York")` を使って schedule の `date` と stats の `season` を決めている。
 
 ---
 
