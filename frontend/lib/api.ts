@@ -18,6 +18,13 @@ function encodedToken(token: string): string {
   return encodeURIComponent(token);
 }
 
+function sanitizeUrlForLogs(url: string): string {
+  return url.replace(
+    /\/api\/v1\/preferences\/[^/]+/g,
+    "/api/v1/preferences/[redacted]"
+  );
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -72,7 +79,7 @@ async function request<T>(
     }
 
     // 本番でも最低限ステータスコードとURLはログする
-    console.error(`[API] ${res.status} ${url}`);
+    console.error(`[API] ${res.status} ${sanitizeUrlForLogs(url)}`);
     if (__DEV__) {
       const body = await res.text();
       console.error(`[API] response body:`, body);

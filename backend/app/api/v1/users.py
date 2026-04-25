@@ -102,7 +102,7 @@ async def _get_user_by_token(db: AsyncSession, push_token: str) -> User | None:
 @register_router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
 async def register_user(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     """Expo Push Tokenを登録（既存なら更新）する"""
-    logger.info("register_user called for token prefix=%s", body.expo_push_token[:20])
+    logger.info("register_user called")
     try:
         user, _ = await _get_or_create_user(db, body.expo_push_token)
         await db.commit()
