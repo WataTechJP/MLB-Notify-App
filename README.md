@@ -117,7 +117,7 @@ EXPO_PUBLIC_EAS_PROJECT_ID=<your eas project id>
 | `MLB_API_BASE_URL` | `https://statsapi.mlb.com/api` | MLB APIベースURL |
 | `DEBUG` | `false` | `true` で `/docs` と `/openapi.json` 有効 |
 | `ENABLE_TEST_ENDPOINTS` | `false` | 本番でも `/api/v1/test/*` を有効化 |
-| `GAME_TYPE` | `S` | MLB gameType（`S`,`R`,`P` など） |
+| `GAME_TYPE` | `R` | MLB gameType（`R`,`S`,`P` など）。通常運用はレギュラーシーズンの `R` |
 | `POLL_LIVE_SECONDS` | `20` | LIVE時ポーリング間隔 |
 | `POLL_PREGAME_SECONDS` | `60` | 試合直前間隔 |
 | `POLL_POST_GAME_SECONDS` | `120` | 試合終了直後間隔 |
@@ -126,7 +126,10 @@ EXPO_PUBLIC_EAS_PROJECT_ID=<your eas project id>
 | `POLL_IDLE_NIGHT_HOURS` | `1` | ET深夜帯待機間隔 |
 | `PREGAME_WINDOW_MINUTES` | `15` | 試合直前判定窓 |
 
-補足: ルートの `.env.example` にある `POLL_INTERVAL_SECONDS` は旧名で、現行のアダプティブポーリングでは未使用です。
+補足:
+
+- ルートの `.env.example` にある `POLL_INTERVAL_SECONDS` は旧名で、現行のアダプティブポーリングでは未使用です。
+- MLB の試合日付判定は `America/New_York` 基準です。日本時間の朝でも、米国側でまだ前日の試合中ならその日付を追います。
 
 ### frontend
 
