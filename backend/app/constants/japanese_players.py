@@ -25,6 +25,7 @@ JAPANESE_PLAYERS: list[PlayerInfo] = [
     PlayerInfo(id=608372, name_ja="菅野智之", name_en="Tomoyuki Sugano", position="pitcher", team="BAL"),
     PlayerInfo(id=808959, name_ja="村上宗隆", name_en="Munetaka Murakami", position="batter", team="CWS"),
     PlayerInfo(id=672960, name_ja="岡本和真", name_en="Kazuma Okamoto", position="batter", team="TOR"),
+    PlayerInfo(id=837227, name_ja="今井達也", name_en="Tatsuya Imai", position="pitcher", team="HOU"),
 ]
 
 # player_id → PlayerInfo の辞書 (検索用)

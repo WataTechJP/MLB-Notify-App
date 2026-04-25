@@ -80,6 +80,15 @@ async def _get_or_create_user(db: AsyncSession, push_token: str) -> tuple[User, 
     else:
         user.is_active = True
 
+        # 既存ユーザーにも不足分のUserPlayerを補完（新選手追加時の自動バックフィル）
+        existing_player_result = await db.execute(
+            select(UserPlayer.player_id).where(UserPlayer.user_id == user.id)
+        )
+        existing_player_ids: set[int] = {row.player_id for row in existing_player_result}
+        for player_id in PLAYER_MAP:
+            if player_id not in existing_player_ids:
+                db.add(UserPlayer(user_id=user.id, player_id=player_id))
+
     # 既存ユーザーにも不足分を補完
     await _seed_player_event_prefs(db, user.id)
     return user, created
@@ -93,6 +102,7 @@ async def _get_user_by_token(db: AsyncSession, push_token: str) -> User | None:
 @register_router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
 async def register_user(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     """Expo Push Tokenを登録（既存なら更新）する"""
+    logger.info("register_user called for token prefix=%s", body.expo_push_token[:20])
     try:
         user, _ = await _get_or_create_user(db, body.expo_push_token)
         await db.commit()
@@ -109,6 +119,10 @@ async def register_user(body: RegisterRequest, db: AsyncSession = Depends(get_db
         user.is_active = True
         await _seed_player_event_prefs(db, user.id)
         await db.commit()
+    except Exception as e:
+        await db.rollback()
+        logger.error("register_user unexpected error: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
     await db.refresh(user)
     return user
 

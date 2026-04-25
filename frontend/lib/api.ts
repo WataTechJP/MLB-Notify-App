@@ -8,7 +8,7 @@ import type {
 const API_BASE =
   process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:8001";
 const RETRYABLE_STATUSES = new Set([502, 503, 504]);
-const RETRY_DELAYS_MS = [500, 1500];
+const RETRY_DELAYS_MS = [1000, 3000];
 
 if (!__DEV__ && !API_BASE.startsWith("https://")) {
   console.error("[API] 本番環境ではHTTPSを使用してください。EXPO_PUBLIC_API_BASE_URLをhttps://で始まるURLに設定してください。");
@@ -71,9 +71,11 @@ async function request<T>(
       continue;
     }
 
+    // 本番でも最低限ステータスコードとURLはログする
+    console.error(`[API] ${res.status} ${url}`);
     if (__DEV__) {
       const body = await res.text();
-      console.error(`[API] ${res.status} ${url}:`, body);
+      console.error(`[API] response body:`, body);
     }
     throw new Error(`通信エラーが発生しました (${res.status})`);
   }
