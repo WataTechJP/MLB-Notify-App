@@ -176,7 +176,7 @@ EXPO_PUBLIC_EAS_PROJECT_ID=<your eas project id>
 
 1. Builder: `Dockerfile`
 2. Root Directory: リポジトリルート
-3. 必須環境変数: `REDIS_URL`（Railway Redis を指定）
+3. 必須環境変数: `REDIS_URL`（Railway Redis を指定。未設定だと `localhost:6379` に向かい、起動失敗させる）
 4. 任意: `ENABLE_TEST_ENDPOINTS=true`（テスト通知エンドポイントを使う時だけ）
 
 ## 10. テスト

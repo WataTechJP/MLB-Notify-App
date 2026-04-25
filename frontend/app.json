@@ -20,7 +20,7 @@
         "NSUserNotificationUsageDescription": "MLB日本人選手のホームランや奪三振をリアルタイムで通知するために使用します。",
         "ITSAppUsesNonExemptEncryption": false
       },
-      "buildNumber": "4"
+      "buildNumber": "6"
     },
     "android": {
       "package": "com.mlb.notification",

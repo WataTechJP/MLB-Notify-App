@@ -15,6 +15,11 @@ async def get_redis() -> Redis:
     return _redis
 
 
+async def ping_redis() -> None:
+    redis = await get_redis()
+    await redis.ping()
+
+
 async def close_redis() -> None:
     global _redis
     if _redis is not None:
