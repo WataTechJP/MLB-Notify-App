@@ -1,12 +1,14 @@
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+MLB_TIMEZONE = ZoneInfo("America/New_York")
 
 
 @dataclass
@@ -15,6 +17,19 @@ class GameScheduleEntry:
     game_time_utc: datetime        # UTC tzinfo 付き
     abstract_game_state: str       # "Preview" | "Live" | "Final"
     detailed_state: str | None
+
+
+def _mlb_now() -> datetime:
+    """MLBの試合日付判定に使う現在時刻（米東部時間）を返す。"""
+    return datetime.now(MLB_TIMEZONE)
+
+
+def _mlb_today_str() -> str:
+    return _mlb_now().date().isoformat()
+
+
+def _mlb_season_year() -> int:
+    return _mlb_now().year
 
 
 # MLB Stats APIのフィールドを絞り込んでレスポンスを軽量化
@@ -29,7 +44,7 @@ LIVE_FEED_FIELDS = (
 
 async def get_todays_games(client: httpx.AsyncClient, game_type: str = "R") -> list[int]:
     """今日の試合のgamePkリストを取得する"""
-    today = date.today().strftime("%Y-%m-%d")
+    today = _mlb_today_str()
     url = f"{settings.mlb_api_base_url}/v1/schedule"
     params = {"sportId": 1, "date": today, "gameType": game_type}
 
@@ -58,7 +73,7 @@ async def get_todays_schedule(
     /v1/schedule から gamePk + gameDate + status を取得する。
     fields パラメータで軽量化し、gameDate を UTC 付き datetime に変換して返す。
     """
-    today = date.today().strftime("%Y-%m-%d")
+    today = _mlb_today_str()
     url = f"{settings.mlb_api_base_url}/v1/schedule"
     params = {
         "sportId": 1,
@@ -182,7 +197,7 @@ async def get_player_event_totals(
     params = {
         "stats": "season,career",
         "group": group,
-        "season": date.today().year,
+        "season": _mlb_season_year(),
     }
 
     try:

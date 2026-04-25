@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # R=レギュラーシーズン, S=Spring Training, P=ポストシーズン
     # ※ MLB Stats API は単一値のみ対応。シーズンタイプを変更する場合は
     #   この値を書き換えてサーバーを再起動してください。
-    game_type: str = "S"
+    game_type: str = "R"
 
     # アダプティブ・ポーリング設定
     poll_live_seconds: int = 20          # LIVE状態の間隔
