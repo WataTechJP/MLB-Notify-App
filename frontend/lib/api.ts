@@ -1,28 +1,33 @@
 import type {
   Player,
   PlayerEventPrefs,
-  UserPreferences,
   RegisterUserResponse,
+  UserPreferences,
 } from "@/types/api";
 
-const API_BASE =
-  process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:8001";
+const DEV_API_BASE = "http://localhost:8001";
+const RAW_API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+const API_BASE = RAW_API_BASE || (__DEV__ ? DEV_API_BASE : null);
 const RETRYABLE_STATUSES = new Set([502, 503, 504]);
 const RETRY_DELAYS_MS = [1000, 3000];
 
-if (!__DEV__ && !API_BASE.startsWith("https://")) {
-  console.error("[API] 本番環境ではHTTPSを使用してください。EXPO_PUBLIC_API_BASE_URLをhttps://で始まるURLに設定してください。");
+function getApiBase(): string {
+  if (!API_BASE) {
+    throw new Error(
+      "EXPO_PUBLIC_API_BASE_URL が未設定です。本番ビルドには HTTPS の API URL が必要です。"
+    );
+  }
+  if (!__DEV__ && !API_BASE.startsWith("https://")) {
+    throw new Error(
+      "本番環境では HTTPS の API URL が必要です。EXPO_PUBLIC_API_BASE_URL を確認してください。"
+    );
+  }
+  return API_BASE;
 }
 
-function encodedToken(token: string): string {
-  return encodeURIComponent(token);
-}
-
-function sanitizeUrlForLogs(url: string): string {
-  return url.replace(
-    /\/api\/v1\/preferences\/[^/]+/g,
-    "/api/v1/preferences/[redacted]"
-  );
+function authHeaders(token?: string): HeadersInit {
+  if (!token) return {};
+  return { "X-Push-Token": token };
 }
 
 function sleep(ms: number): Promise<void> {
@@ -30,17 +35,14 @@ function sleep(ms: number): Promise<void> {
 }
 
 function isRetryableRequest(path: string, method: string): boolean {
-  if (method === "GET" || method === "PUT") {
+  if (method === "GET" || method === "PUT" || method === "DELETE") {
     return true;
   }
   return method === "POST" && path === "/api/v1/users/register";
 }
 
-async function request<T>(
-  path: string,
-  options?: RequestInit
-): Promise<T> {
-  const url = `${API_BASE}${path}`;
+async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const url = `${getApiBase()}${path}`;
   const method = (options?.method ?? "GET").toUpperCase();
   const retryable = isRetryableRequest(path, method);
   const maxAttempts = retryable ? 3 : 1;
@@ -60,7 +62,9 @@ async function request<T>(
         await sleep(RETRY_DELAYS_MS[attempt - 1] ?? 2000);
         continue;
       }
-      throw new Error("サーバーに接続できませんでした。ネットワーク接続を確認してください。");
+      throw new Error(
+        "サーバーに接続できませんでした。ネットワーク接続を確認してください。"
+      );
     }
 
     if (res.ok) {
@@ -70,19 +74,24 @@ async function request<T>(
       return res.json() as Promise<T>;
     }
 
-    if (retryable && RETRYABLE_STATUSES.has(res.status) && attempt < maxAttempts) {
+    if (
+      retryable &&
+      RETRYABLE_STATUSES.has(res.status) &&
+      attempt < maxAttempts
+    ) {
       if (__DEV__) {
-        console.warn(`[API] retry ${attempt}/${maxAttempts - 1} ${method} ${url} status=${res.status}`);
+        console.warn(
+          `[API] retry ${attempt}/${maxAttempts - 1} ${method} ${url} status=${res.status}`
+        );
       }
       await sleep(RETRY_DELAYS_MS[attempt - 1] ?? 2000);
       continue;
     }
 
-    // 本番でも最低限ステータスコードとURLはログする
-    console.error(`[API] ${res.status} ${sanitizeUrlForLogs(url)}`);
+    console.error(`[API] ${res.status} ${path}`);
     if (__DEV__) {
       const body = await res.text();
-      console.error(`[API] response body:`, body);
+      console.error("[API] response body:", body);
     }
     throw new Error(`通信エラーが発生しました (${res.status})`);
   }
@@ -99,27 +108,32 @@ export async function registerUser(
   });
 }
 
+export async function deactivateCurrentUser(token: string): Promise<void> {
+  return request<void>("/api/v1/users/me", {
+    method: "DELETE",
+    headers: authHeaders(token),
+  });
+}
+
 export async function getPlayers(): Promise<Player[]> {
   return request<Player[]>("/api/v1/players");
 }
 
 export async function getPreferences(token: string): Promise<UserPreferences> {
-  return request<UserPreferences>(
-    `/api/v1/preferences/${encodedToken(token)}`
-  );
+  return request<UserPreferences>("/api/v1/preferences", {
+    headers: authHeaders(token),
+  });
 }
 
 export async function updatePlayers(
   token: string,
   playerIds: number[]
 ): Promise<void> {
-  return request<void>(
-    `/api/v1/preferences/${encodedToken(token)}/players`,
-    {
-      method: "PUT",
-      body: JSON.stringify({ player_ids: playerIds }),
-    }
-  );
+  return request<void>("/api/v1/preferences/players", {
+    method: "PUT",
+    headers: authHeaders(token),
+    body: JSON.stringify({ player_ids: playerIds }),
+  });
 }
 
 export async function updatePlayerEvents(
@@ -127,19 +141,17 @@ export async function updatePlayerEvents(
   playerId: number,
   prefs: PlayerEventPrefs
 ): Promise<void> {
-  return request<void>(
-    `/api/v1/preferences/${encodedToken(token)}/player-events`,
-    {
-      method: "PUT",
-      body: JSON.stringify({ player_id: playerId, ...prefs }),
-    }
-  );
+  return request<void>("/api/v1/preferences/player-events", {
+    method: "PUT",
+    headers: authHeaders(token),
+    body: JSON.stringify({ player_id: playerId, ...prefs }),
+  });
 }
 
 export async function sendTestNotification(token: string): Promise<void> {
   return request<void>("/api/v1/test/send-notification", {
     method: "POST",
-    body: JSON.stringify({ push_token: token }),
+    headers: authHeaders(token),
   });
 }
 
@@ -149,6 +161,7 @@ export async function sendDemoNotification(
 ): Promise<void> {
   return request<void>("/api/v1/test/send-demo-notification", {
     method: "POST",
-    body: JSON.stringify({ push_token: token, demo_type: demoType }),
+    headers: authHeaders(token),
+    body: JSON.stringify({ demo_type: demoType }),
   });
 }

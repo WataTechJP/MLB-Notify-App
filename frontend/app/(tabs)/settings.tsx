@@ -7,16 +7,22 @@ import {
   ActivityIndicator,
   RefreshControl,
   TouchableOpacity,
+  Alert,
 } from "react-native";
+import { router } from "expo-router";
 import { usePushToken } from "@/hooks/usePushToken";
 import { usePreferences } from "@/hooks/usePreferences";
 import { PlayerCard } from "@/components/PlayerCard";
 import { Colors } from "@/constants/colors";
-import { sendDemoNotification, sendTestNotification } from "@/lib/api";
+import {
+  deactivateCurrentUser,
+  sendDemoNotification,
+  sendTestNotification,
+} from "@/lib/api";
+import { clearPushToken } from "@/lib/storage";
 import type { Player } from "@/types/api";
 
-const SHOW_TEST_TOOLS =
-  __DEV__ || process.env.EXPO_PUBLIC_ENABLE_TEST_TOOLS === "true";
+const SHOW_TEST_TOOLS = __DEV__;
 
 const TEAM_TO_DIVISION: Record<string, string> = {
   BAL: "アメリカンリーグ東地区",
@@ -98,10 +104,11 @@ function buildDivisionGroups(players: Player[]) {
 }
 
 export default function SettingsScreen() {
-  const { token } = usePushToken();
+  const { token, setToken } = usePushToken();
   const { players, preferences, isLoading, error, togglePlayer, refresh } =
     usePreferences(token);
   const [isTesting, setIsTesting] = useState(false);
+  const [isDeactivating, setIsDeactivating] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const handleRefresh = useCallback(async () => {
@@ -135,6 +142,37 @@ export default function SettingsScreen() {
     } finally {
       setIsTesting(false);
     }
+  };
+
+  const handleDeactivate = () => {
+    if (!token || isDeactivating) return;
+    Alert.alert(
+      "通知を停止してログアウト",
+      "この端末の通知登録を無効化し、アプリの保存データも削除します。",
+      [
+        { text: "キャンセル", style: "cancel" },
+        {
+          text: "停止する",
+          style: "destructive",
+          onPress: async () => {
+            setIsDeactivating(true);
+            try {
+              await deactivateCurrentUser(token);
+              await clearPushToken();
+              setToken(null);
+              router.replace("/onboarding");
+            } catch (e) {
+              Alert.alert(
+                "停止に失敗しました",
+                e instanceof Error ? e.message : "通知停止に失敗しました。"
+              );
+            } finally {
+              setIsDeactivating(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   if (isLoading) {
@@ -187,6 +225,25 @@ export default function SettingsScreen() {
             ))}
           </View>
         ))}
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>通知停止</Text>
+        <Text style={styles.helpText}>
+          端末の通知登録を解除して、このアプリの保存データを消します。再開時は通知許可からやり直します。
+        </Text>
+        <TouchableOpacity
+          style={[styles.dangerButton, isDeactivating && styles.testButtonDisabled]}
+          onPress={handleDeactivate}
+          disabled={isDeactivating || !token}
+          activeOpacity={0.7}
+        >
+          {isDeactivating ? (
+            <ActivityIndicator size="small" color={Colors.text} />
+          ) : (
+            <Text style={styles.dangerButtonText}>通知を停止してログアウト</Text>
+          )}
+        </TouchableOpacity>
       </View>
 
       {SHOW_TEST_TOOLS && (
@@ -295,6 +352,12 @@ const styles = StyleSheet.create({
     color: Colors.accent,
     fontSize: 13,
   },
+  helpText: {
+    color: Colors.subtext,
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
   testButton: {
     backgroundColor: Colors.card,
     borderRadius: 12,
@@ -329,6 +392,17 @@ const styles = StyleSheet.create({
     color: Colors.text,
     fontSize: 15,
     fontWeight: "600",
+  },
+  dangerButton: {
+    backgroundColor: Colors.accent,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  dangerButtonText: {
+    color: Colors.text,
+    fontSize: 15,
+    fontWeight: "700",
   },
   testResultText: {
     marginTop: 10,

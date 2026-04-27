@@ -30,7 +30,7 @@ iOS / Android アプリ
 - 選手ごとのイベントON/OFF（ホームラン/奪三振）
 - MLB APIポーリング（状態に応じて自動間隔変更）
 - Redisでイベント重複通知防止
-- テスト通知API（`DEBUG=true` または `ENABLE_TEST_ENDPOINTS=true` 時のみ）
+- テスト通知API（`DEBUG=true` のローカル/開発時のみ）
 
 ## 3. ディレクトリ構成
 
@@ -106,6 +106,8 @@ EXPO_PUBLIC_API_BASE_URL=http://localhost:8001
 EXPO_PUBLIC_EAS_PROJECT_ID=<your eas project id>
 ```
 
+本番ビルドでは `frontend/app.config.ts` が `EXPO_PUBLIC_API_BASE_URL` の未設定や `http://` を検知すると build を失敗させます。
+
 ## 6. 環境変数
 
 ### backend
@@ -115,8 +117,8 @@ EXPO_PUBLIC_EAS_PROJECT_ID=<your eas project id>
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis接続先 |
 | `DATABASE_URL` | `postgresql+asyncpg://postgres:YOUR_PASSWORD@postgres-production-97d8.up.railway.app:5432/railway` | DB接続URL（本番はPostgreSQL推奨） |
 | `MLB_API_BASE_URL` | `https://statsapi.mlb.com/api` | MLB APIベースURL |
+| `APP_ENV` | `development` | `production` の時は `DEBUG=false` かつ SQLite禁止 |
 | `DEBUG` | `false` | `true` で `/docs` と `/openapi.json` 有効 |
-| `ENABLE_TEST_ENDPOINTS` | `false` | 本番でも `/api/v1/test/*` を有効化 |
 | `GAME_TYPE` | `R` | MLB gameType（`R`,`S`,`P` など）。通常運用はレギュラーシーズンの `R` |
 | `POLL_LIVE_SECONDS` | `20` | LIVE時ポーリング間隔 |
 | `POLL_PREGAME_SECONDS` | `60` | 試合直前間隔 |
@@ -145,16 +147,17 @@ EXPO_PUBLIC_EAS_PROJECT_ID=<your eas project id>
 | `GET` | `/api/v1/health` | ヘルスチェック |
 | `GET` | `/api/v1/players` | 対象日本人選手一覧 |
 | `POST` | `/api/v1/users/register` | PushToken登録（冪等） |
-| `GET` | `/api/v1/preferences/{push_token}` | 設定取得（未登録なら自動作成） |
-| `PUT` | `/api/v1/preferences/{push_token}/players` | 選手購読更新 |
-| `PUT` | `/api/v1/preferences/{push_token}/events` | 旧互換イベント設定更新 |
-| `PUT` | `/api/v1/preferences/{push_token}/player-events` | 選手別イベント設定更新 |
+| `DELETE` | `/api/v1/users/me` | 現在端末の通知登録を無効化 |
+| `GET` | `/api/v1/preferences` | 設定取得（未登録なら自動作成） |
+| `PUT` | `/api/v1/preferences/players` | 選手購読更新 |
+| `PUT` | `/api/v1/preferences/events` | 旧互換イベント設定更新 |
+| `PUT` | `/api/v1/preferences/player-events` | 選手別イベント設定更新 |
 | `POST` | `/api/v1/test/send-notification` | テスト通知（条件付き） |
 | `POST` | `/api/v1/test/send-demo-notification` | デモ通知（条件付き） |
 
 注意:
 
-- `push_token` は URL エンコードが必要です。
+- `preferences` 系と `users/me` は `X-Push-Token: ExponentPushToken[...]` ヘッダが必要です。
 - `/docs` は `DEBUG=true` の時のみ表示されます。
 
 ## 8. ポーリングロジック（現行）
@@ -177,7 +180,9 @@ EXPO_PUBLIC_EAS_PROJECT_ID=<your eas project id>
 1. Builder: `Dockerfile`
 2. Root Directory: リポジトリルート
 3. 必須環境変数: `REDIS_URL`（Railway Redis を指定。未設定だと `localhost:6379` に向かい、起動失敗させる）
-4. 任意: `ENABLE_TEST_ENDPOINTS=true`（テスト通知エンドポイントを使う時だけ）
+4. 必須環境変数: `APP_ENV=production`
+5. 必須環境変数: `DATABASE_URL`（PostgreSQL）
+6. `DEBUG` は必ず `false`
 
 ## 10. テスト
 
@@ -191,7 +196,7 @@ pytest
 ## 11. よくあるハマりどころ
 
 - `404 /docs`: `DEBUG=false` なら正常。
-- `404 /api/v1/test/...`: `DEBUG` も `ENABLE_TEST_ENDPOINTS` も `false` なら正常。
+- `404 /api/v1/test/...`: `DEBUG=false` なら正常。
 - `500 users/register`（UNIQUE制約）: 同時登録競合。現コードでは競合吸収済み。
 - Expo本番通知は Expo Go では確認不可。開発ビルドまたは本番ビルドが必要。
 

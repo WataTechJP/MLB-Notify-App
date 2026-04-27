@@ -1,30 +1,26 @@
 import httpx
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from typing import Literal
 
+from app.api.v1.users import PushTokenHeader
 from app.services.notification import send_notifications
 
 router = APIRouter()
 
 
-class TestNotificationRequest(BaseModel):
-    push_token: str = Field(pattern=r"^ExponentPushToken\[.+\]$")
-
-
 class DemoNotificationRequest(BaseModel):
-    push_token: str = Field(pattern=r"^ExponentPushToken\[.+\]$")
     demo_type: Literal["batter", "pitcher", "mlb_first"] = "batter"
 
 
 @router.post("/send-notification")
-async def send_test_notification(body: TestNotificationRequest):
+async def send_test_notification(push_token: PushTokenHeader):
     """テスト通知を送信する（DEBUG=true のときのみルートが登録される）"""
     async with httpx.AsyncClient() as client:
         try:
             await send_notifications(
                 client,
-                [body.push_token],
+                [push_token],
                 title="🧪 テスト通知",
                 body="通知が正常に届いています！",
                 data={"type": "test"},
@@ -36,7 +32,10 @@ async def send_test_notification(body: TestNotificationRequest):
 
 
 @router.post("/send-demo-notification")
-async def send_demo_notification(body: DemoNotificationRequest):
+async def send_demo_notification(
+    body: DemoNotificationRequest,
+    push_token: PushTokenHeader,
+):
     """通知文面のデモを送信する（DEBUG=true のときのみルートが登録される）"""
     if body.demo_type == "batter":
         title = "⚾ 大谷翔平 ホームラン！"
@@ -61,7 +60,7 @@ async def send_demo_notification(body: DemoNotificationRequest):
         try:
             await send_notifications(
                 client,
-                [body.push_token],
+                [push_token],
                 title=title,
                 body=message,
                 data={"type": "demo", "demo_type": body.demo_type},
