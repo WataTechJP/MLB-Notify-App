@@ -1,4 +1,6 @@
-from pydantic import Field, field_validator
+from typing import Literal
+
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # MLB Stats API で有効な gameType 値
@@ -19,9 +21,9 @@ class Settings(BaseSettings):
     )
     mlb_api_base_url: str = "https://statsapi.mlb.com/api"
     debug: bool = Field(default=False, validation_alias="DEBUG")
-    # 本番で /api/v1/test/* を一時的に有効化したい場合に使う
-    enable_test_endpoints: bool = Field(
-        default=False, validation_alias="ENABLE_TEST_ENDPOINTS"
+    app_env: Literal["development", "preview", "production"] = Field(
+        default="development",
+        validation_alias="APP_ENV",
     )
     # R=レギュラーシーズン, S=Spring Training, P=ポストシーズン
     # ※ MLB Stats API は単一値のみ対応。シーズンタイプを変更する場合は
@@ -57,6 +59,16 @@ class Settings(BaseSettings):
         if v not in _VALID_GAME_TYPES:
             raise ValueError(f"Invalid game_type '{v}'. Must be one of {_VALID_GAME_TYPES}")
         return v
+
+    @model_validator(mode="after")
+    def validate_production_safety(self) -> "Settings":
+        if self.app_env != "production":
+            return self
+        if self.debug:
+            raise ValueError("DEBUG must be false when APP_ENV=production")
+        if self.database_url.startswith("sqlite"):
+            raise ValueError("SQLite is not allowed when APP_ENV=production")
+        return self
 
 
 settings = Settings()
