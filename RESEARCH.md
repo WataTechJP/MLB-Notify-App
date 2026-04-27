@@ -769,6 +769,7 @@ lib/storage.ts
 - `eas.json` を作成し、`eas build` でネイティブビルドを生成する
 - `app.json` の `extra.eas.projectId` に Expo Dashboard のプロジェクトIDを設定
 - `EXPO_PUBLIC_API_BASE_URL` を本番URLに変更（`https://` 必須）
+- `frontend/app.config.ts` が production build 時に `EXPO_PUBLIC_API_BASE_URL` を検証し、不正なら build を失敗させる
 - iOS: `bundleIdentifier`、Android: `package` が `app.json` に設定済み
 
 ### Expo Go での動作制限 (SDK 53以降)
@@ -790,10 +791,10 @@ eas build --profile development --platform android  # Android 開発ビルド
 - Web (`expo start --web`) ではSecureStoreが動作しないため、Web対応が必要な場合は `localStorage` へのフォールバックを実装する
 - 値の最大サイズは 2048 バイト。push_tokenは通常100バイト以下のため問題なし
 
-### push_token がURLパスに含まれるリスク
-- バックエンドのアクセスログに push_token が平文で記録される
-- push_token を知る第三者が設定の読み書きができてしまう（認証なし設計の制約）
-- 将来的にはリクエストヘッダー（`X-Push-Token` 等）へ移行することで露出範囲を限定できる
+### push_token の扱い
+- `preferences` 系APIは URL パスではなく `X-Push-Token` ヘッダで認証する
+- これによりアクセスログや監視ツールに token が URL として残るリスクを下げられる
+- 退会/ログアウト時は `DELETE /api/v1/users/me` で `is_active=false` にして通知停止できる
 
 ### `__DEV__` グローバル変数
 - Expo では開発中 (`expo start`) は `__DEV__ === true`、本番ビルドでは `false`

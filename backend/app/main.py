@@ -51,9 +51,9 @@ async def lifespan(app: FastAPI):
     # startup
     logger.info("Starting up MLB notification backend...")
     logger.info(
-        "Settings: DEBUG=%s ENABLE_TEST_ENDPOINTS=%s",
+        "Settings: APP_ENV=%s DEBUG=%s",
+        settings.app_env,
         settings.debug,
-        settings.enable_test_endpoints,
     )
     logger.info("Initializing database tables...")
     try:
