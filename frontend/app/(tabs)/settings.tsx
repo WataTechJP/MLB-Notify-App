@@ -105,10 +105,19 @@ function buildDivisionGroups(players: Player[]) {
 
 export default function SettingsScreen() {
   const { token, setToken } = usePushToken();
-  const { players, preferences, isLoading, error, togglePlayer, refresh } =
+  const {
+    players,
+    preferences,
+    isLoading,
+    error,
+    togglePlayer,
+    setAllPlayersSubscribed,
+    refresh,
+  } =
     usePreferences(token);
   const [isTesting, setIsTesting] = useState(false);
   const [isDeactivating, setIsDeactivating] = useState(false);
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const handleRefresh = useCallback(async () => {
@@ -175,6 +184,16 @@ export default function SettingsScreen() {
     );
   };
 
+  const handleBulkToggle = useCallback(async (enabled: boolean) => {
+    if (isBulkUpdating) return;
+    setIsBulkUpdating(true);
+    try {
+      await setAllPlayersSubscribed(enabled);
+    } finally {
+      setIsBulkUpdating(false);
+    }
+  }, [isBulkUpdating, setAllPlayersSubscribed]);
+
   if (isLoading) {
     return (
       <View style={styles.centered}>
@@ -210,6 +229,24 @@ export default function SettingsScreen() {
         <Text style={styles.sectionTitle}>
           フォローする選手 ({preferences?.player_ids.length ?? 0}/{players.length})
         </Text>
+        <View style={styles.bulkActionRow}>
+          <TouchableOpacity
+            style={[styles.bulkActionButton, isBulkUpdating && styles.testButtonDisabled]}
+            onPress={() => handleBulkToggle(true)}
+            disabled={isBulkUpdating || !token}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.bulkActionButtonText}>全選手をオン</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.bulkActionButton, isBulkUpdating && styles.testButtonDisabled]}
+            onPress={() => handleBulkToggle(false)}
+            disabled={isBulkUpdating || !token}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.bulkActionButtonText}>全選手をオフ</Text>
+          </TouchableOpacity>
+        </View>
         {divisionGroups.map((group) => (
           <View key={group.division} style={styles.divisionBlock}>
             <Text style={styles.divisionTitle}>{group.division}</Text>
@@ -332,6 +369,25 @@ const styles = StyleSheet.create({
   },
   divisionBlock: {
     marginBottom: 14,
+  },
+  bulkActionRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
+  },
+  bulkActionButton: {
+    flex: 1,
+    backgroundColor: Colors.card,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  bulkActionButtonText: {
+    color: Colors.text,
+    fontSize: 13,
+    fontWeight: "700",
   },
   divisionTitle: {
     fontSize: 13,
