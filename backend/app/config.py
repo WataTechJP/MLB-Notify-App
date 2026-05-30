@@ -14,7 +14,10 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str = Field(
+        default="redis://localhost:6379/0",
+        validation_alias="REDIS_URL",
+    )
     database_url: str = Field(
         default="sqlite+aiosqlite:///./data/mlb_app.db",
         validation_alias="DATABASE_URL",
