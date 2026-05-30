@@ -10,6 +10,7 @@ from app.constants.japanese_players import PLAYER_MAP
 from app.database import get_db
 from app.models.user import User, UserEventPref, UserPlayer, UserPlayerEventPref
 from app.schemas.user import (
+    BulkPlayerPrefsUpdate,
     EventPrefsUpdate,
     PlayerEventPrefsUpdate,
     PlayerPrefsUpdate,
@@ -76,6 +77,19 @@ async def _seed_player_event_prefs(db: AsyncSession, user_id: int) -> None:
                         is_enabled=True,
                     )
                 )
+
+
+def _iter_supported_event_types(player_id: int) -> tuple[str, ...]:
+    canonical_player_id = LEGACY_PLAYER_ID_MAP.get(player_id, player_id)
+    player_info = PLAYER_MAP.get(canonical_player_id)
+    if player_info is None:
+        return ()
+    event_types: list[str] = []
+    if player_info.position in ("batter", "two_way"):
+        event_types.append("home_run")
+    if player_info.position in ("pitcher", "two_way"):
+        event_types.append("strikeout")
+    return tuple(event_types)
 
 
 async def _get_or_create_user(db: AsyncSession, push_token: str) -> tuple[User, bool]:
@@ -262,6 +276,37 @@ async def update_player_prefs(
     await db.execute(delete(UserPlayer).where(UserPlayer.user_id == user.id))
     for player_id in unique_player_ids:
         db.add(UserPlayer(user_id=user.id, player_id=player_id))
+
+    await db.commit()
+
+
+@preferences_router.put("/players/bulk", status_code=status.HTTP_204_NO_CONTENT)
+async def update_all_player_prefs(
+    body: BulkPlayerPrefsUpdate,
+    push_token: PushTokenHeader,
+    db: AsyncSession = Depends(get_db),
+):
+    """全選手の購読状態と選手別イベント通知設定を一括更新する"""
+    user = await _get_existing_user_or_404(db, push_token)
+    await _seed_player_event_prefs(db, user.id)
+
+    await db.execute(delete(UserPlayer).where(UserPlayer.user_id == user.id))
+    if body.enabled:
+        for player_id in PLAYER_MAP:
+            db.add(UserPlayer(user_id=user.id, player_id=player_id))
+
+    legacy_pref_result = await db.execute(
+        select(UserEventPref).where(UserEventPref.user_id == user.id)
+    )
+    for pref in legacy_pref_result.scalars().all():
+        pref.is_enabled = body.enabled
+
+    player_event_result = await db.execute(
+        select(UserPlayerEventPref).where(UserPlayerEventPref.user_id == user.id)
+    )
+    for pref in player_event_result.scalars().all():
+        if pref.event_type in _iter_supported_event_types(pref.player_id):
+            pref.is_enabled = body.enabled
 
     await db.commit()
 

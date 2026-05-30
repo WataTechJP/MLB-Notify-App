@@ -22,7 +22,7 @@ JAPANESE_PLAYERS: list[PlayerInfo] = [
     PlayerInfo(id=808963, name_ja="佐々木朗希", name_en="Roki Sasaki", position="pitcher", team="LAD"),
     PlayerInfo(id=673513, name_ja="松井裕樹", name_en="Yuki Matsui", position="pitcher", team="SD"),
     PlayerInfo(id=829272, name_ja="小笠原慎之介", name_en="Shinnosuke Ogasawara", position="pitcher", team="WSH"),
-    PlayerInfo(id=608372, name_ja="菅野智之", name_en="Tomoyuki Sugano", position="pitcher", team="BAL"),
+    PlayerInfo(id=608372, name_ja="菅野智之", name_en="Tomoyuki Sugano", position="pitcher", team="COL"),
     PlayerInfo(id=808959, name_ja="村上宗隆", name_en="Munetaka Murakami", position="batter", team="CWS"),
     PlayerInfo(id=672960, name_ja="岡本和真", name_en="Kazuma Okamoto", position="batter", team="TOR"),
     PlayerInfo(id=837227, name_ja="今井達也", name_en="Tatsuya Imai", position="pitcher", team="HOU"),

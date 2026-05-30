@@ -136,6 +136,17 @@ export async function updatePlayers(
   });
 }
 
+export async function updateAllPlayerPreferences(
+  token: string,
+  enabled: boolean
+): Promise<void> {
+  return request<void>("/api/v1/preferences/players/bulk", {
+    method: "PUT",
+    headers: authHeaders(token),
+    body: JSON.stringify({ enabled }),
+  });
+}
+
 export async function updatePlayerEvents(
   token: string,
   playerId: number,

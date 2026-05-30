@@ -1,6 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import type { Player, PlayerEventPrefs, UserPreferences } from "@/types/api";
-import { getPlayers, getPreferences, updatePlayers, updatePlayerEvents } from "@/lib/api";
+import {
+  getPlayers,
+  getPreferences,
+  updateAllPlayerPreferences,
+  updatePlayers,
+  updatePlayerEvents,
+} from "@/lib/api";
 
 interface UsePreferencesResult {
   players: Player[];
@@ -8,8 +14,24 @@ interface UsePreferencesResult {
   isLoading: boolean;
   error: string | null;
   togglePlayer: (playerId: number) => Promise<void>;
+  setAllPlayersSubscribed: (enabled: boolean) => Promise<void>;
   togglePlayerEvent: (playerId: number, eventType: "home_run" | "strikeout", value: boolean) => Promise<void>;
   refresh: () => Promise<void>;
+}
+
+function buildBulkEventPrefs(players: Player[], enabled: boolean): Record<string, PlayerEventPrefs> {
+  return Object.fromEntries(
+    players.map((player) => {
+      const prefs: PlayerEventPrefs = {};
+      if (player.position === "batter" || player.position === "two_way") {
+        prefs.home_run = enabled;
+      }
+      if (player.position === "pitcher" || player.position === "two_way") {
+        prefs.strikeout = enabled;
+      }
+      return [String(player.id), prefs];
+    })
+  );
 }
 
 export function usePreferences(token: string | null): UsePreferencesResult {
@@ -57,6 +79,31 @@ export function usePreferences(token: string | null): UsePreferencesResult {
     [token, preferences]
   );
 
+  const setAllPlayersSubscribed = useCallback(
+    async (enabled: boolean) => {
+      if (!token || !preferences) return;
+      const next = enabled ? players.map((player) => player.id) : [];
+      const previous = preferences;
+      setPreferences({
+        ...preferences,
+        player_ids: next,
+        event_prefs: {
+          ...preferences.event_prefs,
+          home_run: enabled,
+          strikeout: enabled,
+        },
+        player_event_prefs: buildBulkEventPrefs(players, enabled),
+      });
+      try {
+        await updateAllPlayerPreferences(token, enabled);
+      } catch (e) {
+        setPreferences(previous);
+        setError(e instanceof Error ? e.message : "設定の更新に失敗しました");
+      }
+    },
+    [token, preferences, players]
+  );
+
   const togglePlayerEvent = useCallback(
     async (playerId: number, eventType: "home_run" | "strikeout", value: boolean) => {
       if (!token || !preferences) return;
@@ -88,6 +135,7 @@ export function usePreferences(token: string | null): UsePreferencesResult {
     isLoading,
     error,
     togglePlayer,
+    setAllPlayersSubscribed,
     togglePlayerEvent,
     refresh: load,
   };

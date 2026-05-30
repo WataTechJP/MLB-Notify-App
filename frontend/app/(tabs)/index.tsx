@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from "react-native";
+import { useFocusEffect } from "expo-router";
 import { usePushToken } from "@/hooks/usePushToken";
 import { usePreferences } from "@/hooks/usePreferences";
 import { PlayerCard } from "@/components/PlayerCard";
@@ -19,6 +20,12 @@ export default function HomeScreen() {
   const { players, preferences, isLoading, error, togglePlayerEvent, refresh } =
     usePreferences(token);
   const [selectedPlayer, setSelectedPlayer] = useState<Player | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refresh();
+    }, [refresh])
+  );
 
   const subscribedPlayers = players.filter((p) =>
     preferences?.player_ids.includes(p.id)

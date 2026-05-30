@@ -40,6 +40,46 @@ EVENT_MAP = {
 REDIS_TTL = 86400  # 24時間
 
 
+def _parse_optional_float(value: object) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_home_run_metrics(play: dict) -> str:
+    """ホームラン通知に付与する打球データを整形する。"""
+    play_events = play.get("playEvents", [])
+    if not isinstance(play_events, list):
+        return ""
+
+    hit_data: dict | None = None
+    for play_event in reversed(play_events):
+        candidate = play_event.get("hitData")
+        if isinstance(candidate, dict) and candidate:
+            hit_data = candidate
+            break
+
+    if not hit_data:
+        return ""
+
+    distance_ft = _parse_optional_float(hit_data.get("totalDistance"))
+    launch_speed_mph = _parse_optional_float(hit_data.get("launchSpeed"))
+    launch_angle = _parse_optional_float(hit_data.get("launchAngle"))
+
+    metrics: list[str] = []
+    if distance_ft is not None:
+        metrics.append(f"飛距離 {round(distance_ft * 0.3048)}m")
+    if launch_speed_mph is not None:
+        metrics.append(f"打球速度 {round(launch_speed_mph * 1.60934)}km/h")
+    if launch_angle is not None:
+        metrics.append(f"角度 {round(launch_angle)}°")
+
+    if not metrics:
+        return ""
+    return " " + " / ".join(metrics) + "。"
+
+
 async def _get_last_at_bat_index(redis: Redis, player_id: int, game_pk: int) -> int:
     key = f"last_event:{player_id}:{game_pk}"
     val = await redis.get(key)
@@ -97,6 +137,7 @@ def _build_notification_message(
     season_total: int | None = None,
     career_total: int | None = None,
     opponent_name: str = "",
+    home_run_metrics: str = "",
 ) -> tuple[str, str]:
     """通知タイトルと本文を生成する"""
     player = PLAYER_MAP.get(player_id)
@@ -108,19 +149,22 @@ def _build_notification_message(
         if today_count is not None and career_total == 1:
             body = (
                 f"{name}選手が本日{today_count}本目のホームランを打ちました{pitcher_suffix}！"
-                "これがMLB初ホームランです。"
+                f"これがMLB初ホームランです。{home_run_metrics}"
             )
             return title, body
         # season_total > 0 のときのみシーズン成績を表示（Spring Training等でNone/0の場合は省略）
         if today_count is not None and season_total and (career_total is not None):
             body = (
                 f"{name}選手が本日{today_count}本目のホームランを打ちました{pitcher_suffix}！"
-                f"これで今シーズン{season_total}本目、MLB通算{career_total}本目です。"
+                f"これで今シーズン{season_total}本目、MLB通算{career_total}本目です。{home_run_metrics}"
             )
             return title, body
         if today_count is not None:
-            return title, f"{name}選手が本日{today_count}本目のホームランを打ちました{pitcher_suffix}！"
-        return title, f"{name}選手がホームランを打ちました！"
+            return (
+                title,
+                f"{name}選手が本日{today_count}本目のホームランを打ちました{pitcher_suffix}！{home_run_metrics}",
+            )
+        return title, f"{name}選手がホームランを打ちました！{home_run_metrics}"
     elif event_type == "strikeout":
         title = f"🔥 {name} 奪三振！"
         batter_suffix = f"（{opponent_name}から）" if opponent_name else ""
@@ -206,6 +250,7 @@ async def _process_play(
         )
 
         opponent_name = pitcher_name if event_type == "home_run" else batter_name
+        home_run_metrics = _extract_home_run_metrics(play) if event_type == "home_run" else ""
         title, body = _build_notification_message(
             player_id,
             event_type,
@@ -213,6 +258,7 @@ async def _process_play(
             season_total=season_total,
             career_total=career_total,
             opponent_name=opponent_name,
+            home_run_metrics=home_run_metrics,
         )
         task = asyncio.create_task(send_notifications(http_client, tokens, title, body))
         _background_tasks.add(task)
