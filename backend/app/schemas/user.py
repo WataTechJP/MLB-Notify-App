@@ -28,6 +28,10 @@ class PlayerPrefsUpdate(BaseModel):
     player_ids: list[int] = Field(..., max_length=50, description="購読する選手IDのリスト")
 
 
+class BulkPlayerPrefsUpdate(BaseModel):
+    enabled: bool = Field(..., description="全選手の購読・イベント通知を一括でON/OFFする")
+
+
 class EventPrefsUpdate(BaseModel):
     home_run: bool = True
     strikeout: bool = True
