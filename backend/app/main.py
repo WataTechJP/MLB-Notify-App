@@ -63,18 +63,23 @@ async def lifespan(app: FastAPI):
         logger.error("Failed to initialize database tables: %s", e)
         raise
     logger.info("Checking Redis connectivity...")
+    scheduler_started = False
     try:
         await ping_redis()
         logger.info("Redis connectivity verified")
+        start_scheduler()
+        scheduler_started = True
+        logger.info("Scheduler started")
     except Exception as e:
-        logger.error("Failed to connect to Redis: %s", e)
-        raise
-    start_scheduler()
-    logger.info("Scheduler started")
+        logger.error(
+            "Failed to connect to Redis; API will start without scheduler: %s",
+            e,
+        )
     yield
     # shutdown
     logger.info("Shutting down...")
-    await stop_scheduler()
+    if scheduler_started:
+        await stop_scheduler()
     await close_redis()
 
 
