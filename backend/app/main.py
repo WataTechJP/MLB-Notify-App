@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from app.api.v1.router import router
 from app.config import settings
 from app.database import create_tables
-from app.redis_client import close_redis, ping_redis
+from app.redis_client import close_redis, describe_redis_url, ping_redis
 from app.services.scheduler import start_scheduler, stop_scheduler
 
 logging.basicConfig(
@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("Failed to initialize database tables: %s", e)
         raise
-    logger.info("Checking Redis connectivity...")
+    logger.info("Checking Redis connectivity: %s", describe_redis_url())
     scheduler_started = False
     try:
         await ping_redis()
