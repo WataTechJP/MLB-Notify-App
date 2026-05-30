@@ -47,19 +47,26 @@ def _parse_optional_float(value: object) -> float | None:
         return None
 
 
-def _extract_home_run_metrics(play: dict) -> str:
-    """ホームラン通知に付与する打球データを整形する。"""
+def _find_hit_data(play: dict) -> dict | None:
+    """MLB feed variants may expose hitData on the play or on a playEvent."""
+    candidate = play.get("hitData")
+    if isinstance(candidate, dict) and candidate:
+        return candidate
+
     play_events = play.get("playEvents", [])
     if not isinstance(play_events, list):
-        return ""
+        return None
 
-    hit_data: dict | None = None
     for play_event in reversed(play_events):
         candidate = play_event.get("hitData")
         if isinstance(candidate, dict) and candidate:
-            hit_data = candidate
-            break
+            return candidate
+    return None
 
+
+def _extract_home_run_metrics(play: dict) -> str:
+    """ホームラン通知に付与する打球データを整形する。"""
+    hit_data = _find_hit_data(play)
     if not hit_data:
         return ""
 
@@ -188,45 +195,88 @@ def _build_notification_message(
         return f"{name} イベント発生", f"{name} にイベントが発生しました"
 
 
+def _identify_target_event(play: dict) -> tuple[str, int, str, int] | None:
+    result = play.get("result", {})
+    about = play.get("about", {})
+    matchup = play.get("matchup", {})
+
+    event_name = result.get("event", "")
+    event_type = EVENT_MAP.get(event_name)
+    if not event_type:
+        return None
+
+    if not about.get("isComplete", False):
+        return None
+
+    at_bat_index = about.get("atBatIndex", -1)
+    batter_id = matchup.get("batter", {}).get("id", 0)
+    batter_name = matchup.get("batter", {}).get("fullName", "")
+    pitcher_id = matchup.get("pitcher", {}).get("id", 0)
+    pitcher_name = matchup.get("pitcher", {}).get("fullName", "")
+
+    if event_type == "home_run" and batter_id in BATTER_IDS:
+        return event_type, batter_id, pitcher_name, at_bat_index
+    if event_type == "strikeout" and pitcher_id in PITCHER_IDS:
+        return event_type, pitcher_id, batter_name, at_bat_index
+    return None
+
+
+def _adjust_total_for_pending_events(total: int | None, remaining_pending_count: int) -> int | None:
+    if total is None:
+        return None
+    return max(total - max(remaining_pending_count - 1, 0), 0)
+
+
+async def _count_pending_new_events(
+    plays: list[dict],
+    game_pk: int,
+    redis: Redis,
+) -> dict[tuple[int, str], int]:
+    counts: dict[tuple[int, str], int] = {}
+    last_indexes: dict[int, int] = {}
+
+    for play in plays:
+        identified = _identify_target_event(play)
+        if identified is None:
+            continue
+
+        event_type, player_id, _, at_bat_index = identified
+        if player_id not in last_indexes:
+            last_indexes[player_id] = await _get_last_at_bat_index(redis, player_id, game_pk)
+        if at_bat_index <= last_indexes[player_id]:
+            continue
+
+        key = (player_id, event_type)
+        counts[key] = counts.get(key, 0) + 1
+
+    return counts
+
+
 async def _process_play(
     play: dict,
     game_pk: int,
     redis: Redis,
     db: AsyncSession,
     http_client: httpx.AsyncClient,
+    pending_event_counts: dict[tuple[int, str], int] | None = None,
 ) -> None:
     """1プレイを解析してイベント検知・通知を行う"""
     try:
-        result = play.get("result", {})
-        about = play.get("about", {})
-        matchup = play.get("matchup", {})
-
-        event_name = result.get("event", "")
-        event_type = EVENT_MAP.get(event_name)
-        if not event_type:
+        identified = _identify_target_event(play)
+        if identified is None:
             return
-
-        at_bat_index: int = about.get("atBatIndex", -1)
-        if not about.get("isComplete", False):
-            return
-
-        batter_id: int = matchup.get("batter", {}).get("id", 0)
-        batter_name: str = matchup.get("batter", {}).get("fullName", "")
-        pitcher_id: int = matchup.get("pitcher", {}).get("id", 0)
-        pitcher_name: str = matchup.get("pitcher", {}).get("fullName", "")
-
-        # 日本人選手かどうか判定
-        if event_type == "home_run" and batter_id in BATTER_IDS:
-            player_id = batter_id
-        elif event_type == "strikeout" and pitcher_id in PITCHER_IDS:
-            player_id = pitcher_id
-        else:
-            return
+        event_type, player_id, opponent_name, at_bat_index = identified
 
         # Redis重複チェック
         last_index = await _get_last_at_bat_index(redis, player_id, game_pk)
         if at_bat_index <= last_index:
             return
+
+        pending_key = (player_id, event_type)
+        remaining_pending_count = 1
+        if pending_event_counts is not None:
+            remaining_pending_count = max(pending_event_counts.get(pending_key, 1), 1)
+            pending_event_counts[pending_key] = max(remaining_pending_count - 1, 0)
 
         # 新規イベント: Redis更新
         await _set_last_at_bat_index(redis, player_id, game_pk, at_bat_index)
@@ -248,8 +298,9 @@ async def _process_play(
             player_id,
             event_type,
         )
+        season_total = _adjust_total_for_pending_events(season_total, remaining_pending_count)
+        career_total = _adjust_total_for_pending_events(career_total, remaining_pending_count)
 
-        opponent_name = pitcher_name if event_type == "home_run" else batter_name
         home_run_metrics = _extract_home_run_metrics(play) if event_type == "home_run" else ""
         title, body = _build_notification_message(
             player_id,
@@ -301,5 +352,6 @@ async def detect_events(
             continue
 
         plays = extract_plays(feed)
+        pending_event_counts = await _count_pending_new_events(plays, game_pk, redis)
         for play in plays:
-            await _process_play(play, game_pk, redis, db, http_client)
+            await _process_play(play, game_pk, redis, db, http_client, pending_event_counts)
