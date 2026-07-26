@@ -159,6 +159,17 @@ export async function updatePlayerEvents(
   });
 }
 
+export async function sendUserDemoNotification(
+  token: string,
+  demoType: "batter" | "pitcher"
+): Promise<void> {
+  return request<void>("/api/v1/users/demo-notification", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({ demo_type: demoType }),
+  });
+}
+
 export async function sendTestNotification(token: string): Promise<void> {
   return request<void>("/api/v1/test/send-notification", {
     method: "POST",

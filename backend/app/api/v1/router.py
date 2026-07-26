@@ -10,6 +10,8 @@ router.include_router(players.router, prefix="/players", tags=["players"])
 router.include_router(users.register_router, prefix="/users", tags=["users"])
 # GET/PUT /api/v1/preferences with X-Push-Token header
 router.include_router(users.preferences_router, prefix="/preferences", tags=["preferences"])
+# POST /api/v1/users/demo-notification (本番環境でも使用可能)
+router.include_router(users.demo_router, prefix="/users", tags=["users"])
 
 # POST /api/v1/test/send-notification
 # DEBUG=true の時にのみ登録

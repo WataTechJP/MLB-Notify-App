@@ -1,7 +1,9 @@
 import logging
-from typing import Annotated
+from typing import Annotated, Literal
 
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,9 +20,11 @@ from app.schemas.user import (
     RegisterRequest,
     RegisterResponse,
 )
+from app.services.notification import send_notifications
 
 register_router = APIRouter()
 preferences_router = APIRouter()
+demo_router = APIRouter()
 logger = logging.getLogger(__name__)
 
 LEGACY_PLAYER_ID_MAP: dict[int, int] = {
@@ -388,3 +392,45 @@ async def update_player_event_prefs(
             pref.is_enabled = is_enabled
 
     await db.commit()
+
+
+class UserDemoNotificationRequest(BaseModel):
+    demo_type: Literal["batter", "pitcher"] = "batter"
+
+
+@demo_router.post("/demo-notification", status_code=status.HTTP_204_NO_CONTENT)
+async def send_user_demo_notification(
+    body: UserDemoNotificationRequest,
+    push_token: PushTokenHeader,
+    db: AsyncSession = Depends(get_db),
+):
+    """ユーザー向けデモ通知を送信する（打者ver・投手ver）。本番環境でも使用可能。"""
+    await _get_existing_user_or_404(db, push_token)
+
+    if body.demo_type == "batter":
+        title = "⚾ 大谷翔平 ホームラン！"
+        message = (
+            "大谷翔平選手がホームランを打ちました（対 Kyle Finnegan）！"
+            "これがこのアプリからの通知サンプルです。"
+        )
+    else:
+        title = "🔥 山本由伸 奪三振！"
+        message = (
+            "山本由伸選手が三振を奪いました（Alec Bohmから）！"
+            "これがこのアプリからの通知サンプルです。"
+        )
+
+    async with httpx.AsyncClient() as client:
+        try:
+            await send_notifications(
+                client,
+                [push_token],
+                title=title,
+                body=message,
+                data={"type": "demo", "demo_type": body.demo_type},
+            )
+        except httpx.HTTPError as e:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Expo Push APIへの送信に失敗しました: {e}",
+            ) from e
