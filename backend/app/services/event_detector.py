@@ -286,13 +286,16 @@ async def _process_play(
             player_id, event_type, game_pk, at_bat_index,
         )
 
+        # subscribers の有無に関わらずカウンターを進める
+        # （subscribers がいない間のイベントもカウントに含め、後続通知での過少カウントを防ぐ）
+        today_count = await _increment_and_get_daily_event_count(redis, player_id, event_type)
+
         # 通知対象ユーザー取得
         tokens = await _get_target_users(db, player_id, event_type)
         if not tokens:
             logger.debug("No subscribers for player=%s event=%s", player_id, event_type)
             return
 
-        today_count = await _increment_and_get_daily_event_count(redis, player_id, event_type)
         season_total, career_total = await get_player_event_totals(
             http_client,
             player_id,
