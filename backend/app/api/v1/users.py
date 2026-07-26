@@ -21,6 +21,7 @@ from app.schemas.user import (
     RegisterResponse,
 )
 from app.services.notification import send_notifications
+from app.services.scheduler import get_http_client
 
 register_router = APIRouter()
 preferences_router = APIRouter()
@@ -403,6 +404,7 @@ async def send_user_demo_notification(
     body: UserDemoNotificationRequest,
     push_token: PushTokenHeader,
     db: AsyncSession = Depends(get_db),
+    http_client: httpx.AsyncClient = Depends(get_http_client),
 ):
     """ユーザー向けデモ通知を送信する（打者ver・投手ver）。本番環境でも使用可能。"""
     await _get_existing_user_or_404(db, push_token)
@@ -420,17 +422,17 @@ async def send_user_demo_notification(
             "これがこのアプリからの通知サンプルです。"
         )
 
-    async with httpx.AsyncClient() as client:
-        try:
-            await send_notifications(
-                client,
-                [push_token],
-                title=title,
-                body=message,
-                data={"type": "demo", "demo_type": body.demo_type},
-            )
-        except httpx.HTTPError as e:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Expo Push APIへの送信に失敗しました: {e}",
-            ) from e
+    try:
+        await send_notifications(
+            http_client,
+            [push_token],
+            title=title,
+            body=message,
+            data={"type": "demo", "demo_type": body.demo_type},
+        )
+    except Exception as e:
+        logger.error("send_user_demo_notification failed: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=502,
+            detail="通知の送信に失敗しました。しばらくしてからお試しください。",
+        ) from e
