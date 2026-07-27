@@ -18,6 +18,7 @@ import {
   deactivateCurrentUser,
   sendDemoNotification,
   sendTestNotification,
+  sendUserDemoNotification,
 } from "@/lib/api";
 import { clearPushToken } from "@/lib/storage";
 import type { Player } from "@/types/api";
@@ -119,9 +120,12 @@ export default function SettingsScreen() {
   const [isDeactivating, setIsDeactivating] = useState(false);
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [isDemoSending, setIsDemoSending] = useState(false);
+  const [demoResult, setDemoResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const handleRefresh = useCallback(async () => {
     setTestResult(null);
+    setDemoResult(null);
     await refresh();
   }, [refresh]);
 
@@ -150,6 +154,20 @@ export default function SettingsScreen() {
       setTestResult({ ok: false, msg: e instanceof Error ? e.message : "送信に失敗しました" });
     } finally {
       setIsTesting(false);
+    }
+  };
+
+  const handleSendUserDemo = async (demoType: "batter" | "pitcher") => {
+    if (!token) return;
+    setIsDemoSending(true);
+    setDemoResult(null);
+    try {
+      await sendUserDemoNotification(token, demoType);
+      setDemoResult({ ok: true, msg: "通知を送信しました。数秒後に届きます。" });
+    } catch (e) {
+      setDemoResult({ ok: false, msg: e instanceof Error ? e.message : "送信に失敗しました" });
+    } finally {
+      setIsDemoSending(false);
     }
   };
 
@@ -262,6 +280,45 @@ export default function SettingsScreen() {
             ))}
           </View>
         ))}
+      </View>
+
+      {/* 通知を体験する */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>通知を体験する</Text>
+        <Text style={styles.helpText}>
+          実際にどんな通知が届くかをお試しいただけます。
+        </Text>
+        <View style={styles.demoGrid}>
+          <TouchableOpacity
+            style={[styles.demoButton, isDemoSending && styles.testButtonDisabled]}
+            onPress={() => handleSendUserDemo("batter")}
+            disabled={isDemoSending || !token}
+            activeOpacity={0.7}
+          >
+            {isDemoSending ? (
+              <ActivityIndicator size="small" color={Colors.text} />
+            ) : (
+              <Text style={styles.demoButtonText}>打者通知を体験</Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.demoButton, isDemoSending && styles.testButtonDisabled]}
+            onPress={() => handleSendUserDemo("pitcher")}
+            disabled={isDemoSending || !token}
+            activeOpacity={0.7}
+          >
+            {isDemoSending ? (
+              <ActivityIndicator size="small" color={Colors.text} />
+            ) : (
+              <Text style={styles.demoButtonText}>投手通知を体験</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+        {demoResult && (
+          <Text style={[styles.testResultText, demoResult.ok ? styles.testResultOk : styles.testResultError]}>
+            {demoResult.msg}
+          </Text>
+        )}
       </View>
 
       <View style={styles.section}>

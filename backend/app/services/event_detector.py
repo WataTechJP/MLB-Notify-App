@@ -21,6 +21,8 @@ from app.services.notification import send_notifications
 
 logger = logging.getLogger(__name__)
 
+_JST = ZoneInfo("Asia/Tokyo")
+
 # fire-and-forget タスクをGCされないよう保持するセット
 _background_tasks: set[asyncio.Task] = set()
 
@@ -38,6 +40,7 @@ EVENT_MAP = {
 }
 
 REDIS_TTL = 86400  # 24時間
+REDIS_DAILY_COUNT_TTL = 172800  # 2日（日付跨ぎ遅延を吸収）
 
 
 def _parse_optional_float(value: object) -> float | None:
@@ -98,18 +101,22 @@ async def _set_last_at_bat_index(redis: Redis, player_id: int, game_pk: int, at_
     await redis.set(key, at_bat_index, ex=REDIS_TTL)
 
 
+def _jst_date_str() -> str:
+    return datetime.now(_JST).strftime("%Y%m%d")
+
+
 async def _increment_and_get_daily_event_count(
     redis: Redis,
     player_id: int,
     event_type: str,
 ) -> int:
     """当日中の選手別イベント数をインクリメントして返す"""
-    jst_date = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y%m%d")
+    jst_date = _jst_date_str()
     key = f"daily_event_count:{jst_date}:{player_id}:{event_type}"
     count = await redis.incr(key)
     # 日付を跨いだ遅延処理も吸収できるよう2日保持
     if count == 1:
-        await redis.expire(key, 172800)
+        await redis.expire(key, REDIS_DAILY_COUNT_TTL)
     return int(count)
 
 
@@ -222,6 +229,10 @@ def _identify_target_event(play: dict) -> tuple[str, int, str, int] | None:
 
 
 def _adjust_total_for_pending_events(total: int | None, remaining_pending_count: int) -> int | None:
+    """`remaining_pending_count` 個の未処理イベントのうち現在処理中の1件を除いた先行未処理件数分だけ
+    `total` を遡らせる。Stats API が最新イベント込みの値を返す場合に、先行イベント分の重複を除くために
+    使用する。`total` が None の場合は None を返す。
+    """
     if total is None:
         return None
     return max(total - max(remaining_pending_count - 1, 0), 0)
@@ -260,7 +271,12 @@ async def _process_play(
     http_client: httpx.AsyncClient,
     pending_event_counts: dict[tuple[int, str], int] | None = None,
 ) -> None:
-    """1プレイを解析してイベント検知・通知を行う"""
+    """1プレイを解析してイベント検知・通知を行う。
+
+    設計上の注意: カウンターは通知送信の成否に関わらずインクリメントされる。例外発生時に通知が
+    失われてもカウンターは戻らない（at-most-once 通知）。これは subscribers 不在時のカウント欠損
+    （issue #42）よりも許容できる副作用として意図的に選択した仕様である。
+    """
     try:
         identified = _identify_target_event(play)
         if identified is None:
@@ -273,6 +289,8 @@ async def _process_play(
             return
 
         pending_key = (player_id, event_type)
+        # pending_event_counts=None は POST_GAME 追い込み以外の通常呼出しを示す。
+        # remaining_pending_count=1 となり _adjust_total_for_pending_events は total を変化させない（補正不要）。
         remaining_pending_count = 1
         if pending_event_counts is not None:
             remaining_pending_count = max(pending_event_counts.get(pending_key, 1), 1)
@@ -286,13 +304,16 @@ async def _process_play(
             player_id, event_type, game_pk, at_bat_index,
         )
 
+        # subscribers の有無に関わらずカウンターを進める
+        # （subscribers がいない間のイベントもカウントに含め、後続通知での過少カウントを防ぐ）
+        today_count = await _increment_and_get_daily_event_count(redis, player_id, event_type)
+
         # 通知対象ユーザー取得
         tokens = await _get_target_users(db, player_id, event_type)
         if not tokens:
             logger.debug("No subscribers for player=%s event=%s", player_id, event_type)
             return
 
-        today_count = await _increment_and_get_daily_event_count(redis, player_id, event_type)
         season_total, career_total = await get_player_event_totals(
             http_client,
             player_id,

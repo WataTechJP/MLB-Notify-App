@@ -1,3 +1,5 @@
+from urllib.parse import urlsplit
+
 from redis.asyncio import Redis, from_url
 
 from app.config import settings
@@ -8,6 +10,14 @@ if not settings.redis_url.startswith(("redis://", "rediss://")):
     raise ValueError("Invalid Redis URL scheme. Expected redis:// or rediss://")
 
 _redis: Redis | None = None
+
+
+def describe_redis_url() -> str:
+    parsed = urlsplit(settings.redis_url)
+    host = parsed.hostname or "unknown-host"
+    port = f":{parsed.port}" if parsed.port else ""
+    db = parsed.path or ""
+    return f"{parsed.scheme}://{host}{port}{db}"
 
 
 async def get_redis() -> Redis:
