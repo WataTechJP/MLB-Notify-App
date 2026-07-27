@@ -85,6 +85,20 @@ def test_build_notification_message_strikeout_with_season_and_career_total():
     assert "MLB通算200個目" in body
 
 
+def test_build_notification_message_strikeout_first_career():
+    title, body = _build_notification_message(
+        808967,
+        "strikeout",
+        today_count=1,
+        season_total=1,
+        career_total=1,
+        opponent_name="Mike Trout",
+    )
+    assert title == "🔥 山本由伸 奪三振！"
+    assert "本日1個目" in body
+    assert "これがMLB初奪三振です" in body
+
+
 def test_adjust_total_for_pending_events_counts_forward_from_current_total():
     assert _adjust_total_for_pending_events(700, 2) == 699
     assert _adjust_total_for_pending_events(700, 1) == 700
@@ -180,6 +194,7 @@ async def test_process_play_increments_daily_count_even_when_no_subscribers():
         patch("app.services.event_detector._get_target_users", return_value=[]),
         patch("app.services.event_detector._get_last_at_bat_index", return_value=-1),
         patch("app.services.event_detector._set_last_at_bat_index"),
+        patch("app.services.event_detector._jst_date_str", return_value="20240101"),
     ):
         await _process_play(
             play,
@@ -189,8 +204,7 @@ async def test_process_play_increments_daily_count_even_when_no_subscribers():
             http_client=AsyncMock(),
         )
 
-    jst_date = datetime.now(ZoneInfo("Asia/Tokyo")).strftime("%Y%m%d")
-    key = f"daily_event_count:{jst_date}:808967:strikeout"
+    key = "daily_event_count:20240101:808967:strikeout"
     assert fake_redis.values.get(key) == 1
 
 
