@@ -189,11 +189,19 @@ async def test_process_play_increments_daily_count_even_when_no_subscribers():
 
 @pytest.mark.anyio
 async def test_process_play_multiple_pending_events_increment_n_and_m_correctly():
-    """3つの未処理奪三振イベントを順に処理したとき、n=1,2,3 と m=198,199,200 が正しく出ること。
+    """3つの未処理奪三振イベントを順に処理したとき、n=1,2,3 と season/career が正しく出ること。
 
     pending_event_counts による _adjust_total_for_pending_events の補正と
     today_count の連番インクリメントが正しく連携していることを確認する。
+
+    get_player_event_totals が (50, 200) を返すとき:
+    - play1: remaining=3 → season=48, career=198
+    - play2: remaining=2 → season=49, career=199
+    - play3: remaining=1 → season=50, career=200
     """
+    # 他テストが追加した残留タスクを排除してテスト隔離を保証する
+    ed_module._background_tasks.clear()
+
     fake_redis = _FakeRedisWithIncr()
     game_pk = 99999
     player_id = 808967
@@ -227,15 +235,18 @@ async def test_process_play_multiple_pending_events_increment_n_and_m_correctly(
                 http_client=AsyncMock(),
                 pending_event_counts=pending_event_counts,
             )
-        # fire-and-forget タスクを _background_tasks から flush する
-        tasks = list(ed_module._background_tasks)
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        # このテストで作成した fire-and-forget タスクのみ flush する
+        created_tasks = list(ed_module._background_tasks)
+        if created_tasks:
+            await asyncio.gather(*created_tasks, return_exceptions=True)
 
     assert len(captured_bodies) == 3
     assert "本日1個目" in captured_bodies[0]
     assert "本日2個目" in captured_bodies[1]
     assert "本日3個目" in captured_bodies[2]
+    assert "今シーズン48個目" in captured_bodies[0]
+    assert "今シーズン49個目" in captured_bodies[1]
+    assert "今シーズン50個目" in captured_bodies[2]
     assert "MLB通算198個目" in captured_bodies[0]
     assert "MLB通算199個目" in captured_bodies[1]
     assert "MLB通算200個目" in captured_bodies[2]
