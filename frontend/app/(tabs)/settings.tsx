@@ -23,8 +23,6 @@ import {
 import { clearPushToken } from "@/lib/storage";
 import type { Player } from "@/types/api";
 
-const SHOW_TEST_TOOLS = __DEV__;
-
 const TEAM_TO_DIVISION: Record<string, string> = {
   BAL: "アメリカンリーグ東地区",
   BOS: "アメリカンリーグ東地区",
@@ -340,54 +338,52 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       </View>
 
-      {SHOW_TEST_TOOLS && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>通知テスト</Text>
-          <View style={styles.demoGrid}>
-            <TouchableOpacity
-              style={[styles.demoButton, isTesting && styles.testButtonDisabled]}
-              onPress={() => handleSendDemo("batter")}
-              disabled={isTesting || !token}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.demoButtonText}>打者デモ</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.demoButton, isTesting && styles.testButtonDisabled]}
-              onPress={() => handleSendDemo("pitcher")}
-              disabled={isTesting || !token}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.demoButtonText}>投手デモ</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.demoButton, isTesting && styles.testButtonDisabled]}
-              onPress={() => handleSendDemo("mlb_first")}
-              disabled={isTesting || !token}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.demoButtonText}>MLB初デモ</Text>
-            </TouchableOpacity>
-          </View>
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>通知テスト</Text>
+        <View style={styles.demoGrid}>
           <TouchableOpacity
-            style={[styles.testButton, isTesting && styles.testButtonDisabled]}
-            onPress={handleSendTest}
+            style={[styles.demoButton, isTesting && styles.testButtonDisabled]}
+            onPress={() => handleSendDemo("batter")}
             disabled={isTesting || !token}
             activeOpacity={0.7}
           >
-            {isTesting ? (
-              <ActivityIndicator size="small" color={Colors.text} />
-            ) : (
-              <Text style={styles.testButtonText}>テスト通知を送る</Text>
-            )}
+            <Text style={styles.demoButtonText}>打者デモ</Text>
           </TouchableOpacity>
-          {testResult && (
-            <Text style={[styles.testResultText, testResult.ok ? styles.testResultOk : styles.testResultError]}>
-              {testResult.msg}
-            </Text>
-          )}
+          <TouchableOpacity
+            style={[styles.demoButton, isTesting && styles.testButtonDisabled]}
+            onPress={() => handleSendDemo("pitcher")}
+            disabled={isTesting || !token}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.demoButtonText}>投手デモ</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.demoButton, isTesting && styles.testButtonDisabled]}
+            onPress={() => handleSendDemo("mlb_first")}
+            disabled={isTesting || !token}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.demoButtonText}>MLB初デモ</Text>
+          </TouchableOpacity>
         </View>
-      )}
+        <TouchableOpacity
+          style={[styles.testButton, isTesting && styles.testButtonDisabled]}
+          onPress={handleSendTest}
+          disabled={isTesting || !token}
+          activeOpacity={0.7}
+        >
+          {isTesting ? (
+            <ActivityIndicator size="small" color={Colors.text} />
+          ) : (
+            <Text style={styles.testButtonText}>テスト通知を送る</Text>
+          )}
+        </TouchableOpacity>
+        {testResult && (
+          <Text style={[styles.testResultText, testResult.ok ? styles.testResultOk : styles.testResultError]}>
+            {testResult.msg}
+          </Text>
+        )}
+      </View>
     </ScrollView>
   );
 }
