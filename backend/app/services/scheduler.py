@@ -268,3 +268,10 @@ async def stop_scheduler() -> None:
     if _http_client:
         await _http_client.aclose()
         _http_client = None
+
+
+def get_http_client() -> httpx.AsyncClient:
+    """lifespan で管理された共有 AsyncClient を返す。未初期化時は RuntimeError を送出する。"""
+    if _http_client is None:
+        raise RuntimeError("HTTP client is not initialized (scheduler not started)")
+    return _http_client
