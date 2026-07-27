@@ -15,7 +15,7 @@ class DemoNotificationRequest(BaseModel):
 
 @router.post("/send-notification")
 async def send_test_notification(push_token: PushTokenHeader):
-    """テスト通知を送信する（DEBUG=true のときのみルートが登録される）"""
+    """テスト通知を送信する"""
     async with httpx.AsyncClient() as client:
         try:
             await send_notifications(
@@ -36,7 +36,7 @@ async def send_demo_notification(
     body: DemoNotificationRequest,
     push_token: PushTokenHeader,
 ):
-    """通知文面のデモを送信する（DEBUG=true のときのみルートが登録される）"""
+    """通知文面のデモを送信する"""
     if body.demo_type == "batter":
         title = "⚾ 大谷翔平 ホームラン！"
         message = (
