@@ -15,6 +15,13 @@ from app.services.event_detector import (
 )
 
 
+@pytest.fixture(autouse=True)
+def clear_background_tasks():
+    ed_module._background_tasks.clear()
+    yield
+    ed_module._background_tasks.clear()
+
+
 def test_extract_home_run_metrics_formats_metric_values():
     play = {
         "playEvents": [
@@ -199,9 +206,6 @@ async def test_process_play_multiple_pending_events_increment_n_and_m_correctly(
     - play2: remaining=2 → season=49, career=199
     - play3: remaining=1 → season=50, career=200
     """
-    # 他テストが追加した残留タスクを排除してテスト隔離を保証する
-    ed_module._background_tasks.clear()
-
     fake_redis = _FakeRedisWithIncr()
     game_pk = 99999
     player_id = 808967
