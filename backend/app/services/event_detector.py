@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -43,9 +44,22 @@ REDIS_TTL = 86400  # 24時間
 REDIS_DAILY_COUNT_TTL = 172800  # 2日（日付跨ぎ遅延を吸収）
 
 
+@dataclass(frozen=True)
+class FeedEventTotals:
+    game_count: int | None = None
+    season_total: int | None = None
+
+
 def _parse_optional_float(value: object) -> float | None:
     try:
         return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_optional_int(value: object) -> int | None:
+    try:
+        return int(value)
     except (TypeError, ValueError):
         return None
 
@@ -238,6 +252,75 @@ def _adjust_total_for_pending_events(total: int | None, remaining_pending_count:
     return max(total - max(remaining_pending_count - 1, 0), 0)
 
 
+def _stat_group_and_key(event_type: str) -> tuple[str, str] | None:
+    if event_type == "home_run":
+        return "batting", "homeRuns"
+    if event_type == "strikeout":
+        return "pitching", "strikeOuts"
+    return None
+
+
+def _iter_boxscore_player_rows(feed: dict):
+    teams = (
+        feed.get("liveData", {})
+        .get("boxscore", {})
+        .get("teams", {})
+    )
+    if not isinstance(teams, dict):
+        return
+
+    for side in ("away", "home"):
+        players = teams.get(side, {}).get("players", {})
+        if not isinstance(players, dict):
+            continue
+        for row in players.values():
+            if isinstance(row, dict):
+                yield row
+
+
+def _extract_feed_event_totals(feed: dict) -> dict[tuple[int, str], FeedEventTotals]:
+    """feed/live の boxscore から試合内カウントとシーズン合計を抽出する。"""
+    totals: dict[tuple[int, str], FeedEventTotals] = {}
+
+    for row in _iter_boxscore_player_rows(feed):
+        player_id = _parse_optional_int(row.get("person", {}).get("id"))
+        if player_id is None:
+            continue
+
+        for event_type in ("home_run", "strikeout"):
+            stat_path = _stat_group_and_key(event_type)
+            if stat_path is None:
+                continue
+            group, stat_key = stat_path
+            game_count = _parse_optional_int(
+                row.get("stats", {}).get(group, {}).get(stat_key)
+            )
+            season_total = _parse_optional_int(
+                row.get("seasonStats", {}).get(group, {}).get(stat_key)
+            )
+            if game_count is None and season_total is None:
+                continue
+            totals[(player_id, event_type)] = FeedEventTotals(
+                game_count=game_count,
+                season_total=season_total,
+            )
+
+    return totals
+
+
+def _adjust_career_total_with_feed_season(
+    stats_season_total: int | None,
+    stats_career_total: int | None,
+    feed_season_total: int | None,
+) -> int | None:
+    """people/stats の career が遅延している場合に feed の seasonStats 差分で補正する。"""
+    if stats_career_total is None:
+        return None
+    if stats_season_total is None or feed_season_total is None:
+        return stats_career_total
+    return max(stats_career_total + (feed_season_total - stats_season_total), 0)
+
+
 async def _count_pending_new_events(
     plays: list[dict],
     game_pk: int,
@@ -270,6 +353,7 @@ async def _process_play(
     db: AsyncSession,
     http_client: httpx.AsyncClient,
     pending_event_counts: dict[tuple[int, str], int] | None = None,
+    feed_event_totals: dict[tuple[int, str], FeedEventTotals] | None = None,
 ) -> None:
     """1プレイを解析してイベント検知・通知を行う。
 
@@ -304,9 +388,17 @@ async def _process_play(
             player_id, event_type, game_pk, at_bat_index,
         )
 
-        # subscribers の有無に関わらずカウンターを進める
-        # （subscribers がいない間のイベントもカウントに含め、後続通知での過少カウントを防ぐ）
-        today_count = await _increment_and_get_daily_event_count(redis, player_id, event_type)
+        feed_totals = (feed_event_totals or {}).get(pending_key)
+
+        # subscribers の有無に関わらずRedisカウンターを進める。
+        # feed の試合内成績がある場合、通知文の「本日n本目/個目」は feed を優先する。
+        redis_today_count = await _increment_and_get_daily_event_count(redis, player_id, event_type)
+        today_count = _adjust_total_for_pending_events(
+            feed_totals.game_count if feed_totals else None,
+            remaining_pending_count,
+        )
+        if today_count is None:
+            today_count = redis_today_count
 
         # 通知対象ユーザー取得
         tokens = await _get_target_users(db, player_id, event_type)
@@ -314,10 +406,17 @@ async def _process_play(
             logger.debug("No subscribers for player=%s event=%s", player_id, event_type)
             return
 
-        season_total, career_total = await get_player_event_totals(
+        stats_season_total, stats_career_total = await get_player_event_totals(
             http_client,
             player_id,
             event_type,
+        )
+        feed_season_total = feed_totals.season_total if feed_totals else None
+        season_total = feed_season_total if feed_season_total is not None else stats_season_total
+        career_total = _adjust_career_total_with_feed_season(
+            stats_season_total,
+            stats_career_total,
+            feed_season_total,
         )
         season_total = _adjust_total_for_pending_events(season_total, remaining_pending_count)
         career_total = _adjust_total_for_pending_events(career_total, remaining_pending_count)
@@ -374,5 +473,14 @@ async def detect_events(
 
         plays = extract_plays(feed)
         pending_event_counts = await _count_pending_new_events(plays, game_pk, redis)
+        feed_event_totals = _extract_feed_event_totals(feed)
         for play in plays:
-            await _process_play(play, game_pk, redis, db, http_client, pending_event_counts)
+            await _process_play(
+                play,
+                game_pk,
+                redis,
+                db,
+                http_client,
+                pending_event_counts,
+                feed_event_totals,
+            )
