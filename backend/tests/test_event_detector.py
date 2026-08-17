@@ -7,9 +7,12 @@ import pytest
 
 import app.services.event_detector as ed_module
 from app.services.event_detector import (
+    FeedEventTotals,
     _adjust_total_for_pending_events,
+    _adjust_career_total_with_feed_season,
     _build_notification_message,
     _count_pending_new_events,
+    _extract_feed_event_totals,
     _extract_home_run_metrics,
     _process_play,
 )
@@ -103,6 +106,40 @@ def test_adjust_total_for_pending_events_counts_forward_from_current_total():
     assert _adjust_total_for_pending_events(700, 2) == 699
     assert _adjust_total_for_pending_events(700, 1) == 700
     assert _adjust_total_for_pending_events(None, 2) is None
+
+
+def test_adjust_career_total_with_feed_season_delta():
+    assert _adjust_career_total_with_feed_season(
+        stats_season_total=94,
+        stats_career_total=122,
+        feed_season_total=101,
+    ) == 129
+
+
+def test_extract_feed_event_totals_reads_boxscore_player_stats():
+    feed = {
+        "liveData": {
+            "boxscore": {
+                "teams": {
+                    "home": {
+                        "players": {
+                            "ID808963": {
+                                "person": {"id": 808963},
+                                "stats": {"pitching": {"strikeOuts": 7}},
+                                "seasonStats": {"pitching": {"strikeOuts": 101}},
+                            }
+                        }
+                    },
+                    "away": {"players": {}},
+                }
+            }
+        }
+    }
+
+    assert _extract_feed_event_totals(feed)[(808963, "strikeout")] == FeedEventTotals(
+        game_count=7,
+        season_total=101,
+    )
 
 
 class _FakeRedis:
@@ -268,3 +305,46 @@ async def test_process_play_multiple_pending_events_increment_n_and_m_correctly(
     assert "MLB通算198個目" in captured_bodies[0]
     assert "MLB通算199個目" in captured_bodies[1]
     assert "MLB通算200個目" in captured_bodies[2]
+
+
+@pytest.mark.anyio
+async def test_process_play_uses_feed_totals_when_people_stats_lag():
+    """people/stats が古くても feed/live の boxscore を優先して通知数を補正する。"""
+    fake_redis = _FakeRedisWithIncr()
+    game_pk = 99999
+    player_id = 808963
+    play = _make_strikeout_play(at_bat_index=40, batter_id=111, pitcher_id=player_id)
+    captured_bodies: list[str] = []
+
+    async def fake_send_notifications(client, tokens, title, body, data=None):
+        captured_bodies.append(body)
+
+    with (
+        patch("app.services.event_detector._get_target_users", return_value=["token1"]),
+        patch("app.services.event_detector._get_last_at_bat_index", return_value=-1),
+        patch("app.services.event_detector._set_last_at_bat_index"),
+        patch("app.services.event_detector.get_player_event_totals", return_value=(94, 122)),
+        patch("app.services.event_detector.send_notifications", side_effect=fake_send_notifications),
+    ):
+        await _process_play(
+            play,
+            game_pk=game_pk,
+            redis=fake_redis,
+            db=AsyncMock(),
+            http_client=AsyncMock(),
+            pending_event_counts={(player_id, "strikeout"): 3},
+            feed_event_totals={
+                (player_id, "strikeout"): FeedEventTotals(
+                    game_count=7,
+                    season_total=101,
+                )
+            },
+        )
+        created_tasks = list(ed_module._background_tasks)
+        if created_tasks:
+            await asyncio.gather(*created_tasks, return_exceptions=True)
+
+    assert captured_bodies == [
+        "佐々木朗希選手が本日5個目の三振を奪いました（Batter 111から）！"
+        "これで今シーズン99個目、MLB通算127個目です。"
+    ]

@@ -5,7 +5,7 @@ import type {
   UserPreferences,
 } from "@/types/api";
 
-const DEV_API_BASE = "http://localhost:8001";
+const DEV_API_BASE = "http://localhost:8000";
 const RAW_API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
 const API_BASE = RAW_API_BASE || (__DEV__ ? DEV_API_BASE : null);
 const RETRYABLE_STATUSES = new Set([502, 503, 504]);

@@ -102,9 +102,11 @@ npx expo start
 `.env` の最低設定:
 
 ```env
-EXPO_PUBLIC_API_BASE_URL=http://localhost:8001
+EXPO_PUBLIC_API_BASE_URL=http://localhost:8000
 EXPO_PUBLIC_EAS_PROJECT_ID=<your eas project id>
 ```
+
+backend をローカル直起動する場合は `http://localhost:8001`、Docker backend を使う場合は `http://localhost:8000` です。
 
 本番ビルドでは `frontend/app.config.ts` が `EXPO_PUBLIC_API_BASE_URL` の未設定や `http://` を検知すると build を失敗させます。
 
